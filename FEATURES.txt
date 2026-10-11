@@ -1,0 +1,57 @@
+================================================================================
+LOST PHONE FINDER — FEATURE LIST (from zero to now, 11 Oct 2026)
+================================================================================
+
+APP BASICS
+--------------------------------------------------------------------------------
+1. Email/password registration and login (Firebase Auth, persistent sessions).
+2. My Devices list, real-time from Firestore.
+3. Add this device (name, model, owner phone for SMS fallback).
+4. Device detail screen per phone.
+5. Fleet map showing every tracked device.
+6. Expo Router navigation (Login/Register/Devices/Device/Map/Mesh).
+7. EAS project linked (@saikat_03/lost-phone-finder); Android dev builds.
+8. Firebase project wired (Auth + Firestore + owner-only security rules).
+
+LOCATION TRACKING (Phase 2) — TESTED ON DEVICE
+--------------------------------------------------------------------------------
+9.  One-tap "Send location now".
+10. Background GPS every 10 min / 50 m (foreground-service notification).
+11. Foreground fallback tracker for environments without background support.
+12. Battery % captured with every fix.
+13. Location history (last 50 fixes) per device.
+14. Live map with latest (red) + history (blue) pins; interactive pan/zoom.
+15. Keyless Esri street tiles (no Google billing needed).
+
+SIM-SWAP & THEFT ALERTS (Phase 3) — TESTED ON DEVICE
+--------------------------------------------------------------------------------
+16. SIM baseline snapshot at registration (carrier + MCC/MNC + ISO).
+17. Automatic swap check on every background batch + manual "Check SIM now".
+18. Swap flips device to simSwapped + LOST and fires an on-device alert.
+19. Manual Mark-LOST / Clear-LOST emergency toggle.
+20. SMS-owner-location composer with prefilled Google Maps link + battery.
+21. Devices list shows SIM/LOST state live.
+    (Limits, stated honestly: true IMSI reads are impossible for store apps —
+     same-operator SIM swaps may not trip detection; SMS needs one user tap.)
+
+OFFLINE MESH (Phase 4a + 4b)
+--------------------------------------------------------------------------------
+22. NaCl sealed location packets — helpers relay opaque blobs they can't read.
+23. Per-device mesh keypairs (SecureStore + owner-only backup, pubkey on device).
+24. SQLite store-and-forward queue (24h TTL, 200 cap, memory fallback).
+25. Gateway relay upload + owner harvest/decrypt into device history.
+26. Mesh screen: device picker, one-tap cloud relay test, harvest, live queue.
+27. Helper BLE scan role (find -> connect -> read packet -> relay).
+28. Phone-as-beacon role via custom native advertiser module (BluetoothLeAdvertiser
+    + GATT server, helper-connected/packet-read events). Awaiting radio test.
+    (Proven: cloud relay loop "Checked 1, decrypted 1". Radio test needs the
+    4b build on 2 phones, Bluetooth on, ~10 m apart, stolen phone offline.)
+
+NOT YET BUILT
+--------------------------------------------------------------------------------
+- Silent SMS sending, remote ring/lock/wipe, Cloud-Function owner push,
+  production Play Store release (Phase 5), battery/UX polish, security audit.
+
+================================================================================
+END OF FEATURE LIST
+================================================================================

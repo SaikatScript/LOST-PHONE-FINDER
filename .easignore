@@ -1,0 +1,29 @@
+# Mirror of .gitignore, EXCEPT .env is allowed through so EAS Build can
+# read EXPO_PUBLIC_ keys (Google Maps) when baking the native manifest.
+# See https://docs.expo.dev/versions/v57.0.0/sdk/map-view.md#deploy-app-with-google-maps
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+*.pem
+.env*.local
+expoidpass.txt
+# local build artifacts / tooling (large, never upload)
+*.apk
+adb-tools/
+*.tsbuildinfo
+/ios
+/android

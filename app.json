@@ -1,24 +1,63 @@
 {
   "expo": {
-    "name": "App",
-    "slug": "App",
+    "name": "Lost Phone Finder",
+    "slug": "lost-phone-finder",
+    "scheme": "lostphonefinder",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "experiments": {
+      "typedRoutes": true
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lostphonefinder.app"
     },
     "android": {
+      "package": "com.lostphonefinder.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "READ_PHONE_STATE",
+        "SEND_SMS",
+        "RECEIVE_SMS",
+        "BLUETOOTH_SCAN",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_ADVERTISE"
+      ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
-    }
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Lost Phone Finder to use your location to track this device when lost.",
+          "locationWhenInUsePermission": "Allow Lost Phone Finder to use your location to track this device when lost.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isIosBackgroundLocationEnabled": true
+        }
+      ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "6bc0833c-4303-4942-9ba4-b8ebce123e57"
+      }
+    },
+    "owner": "saikat_03"
   }
 }

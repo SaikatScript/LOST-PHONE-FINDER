@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users can only read/write their own user doc + devices + locations.
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /devices/{deviceId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /devices/{deviceId}/locations/{locationId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Top-level locations collection (blueprint §4) — owner-only access.
+    // Expects docs with `userId` field matching the owner.
+    match /locations/{locationId} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null
+        && request.auth.uid == request.resource.data.userId;
+    }
+
+    // Phase 4a mesh relays: any signed-in helper can UPLOAD (opaque sealed
+    // blobs), but only the owning account can read/delete its own relays.
+    match /relays/{relayId} {
+      allow create: if request.auth != null;
+      allow read, delete: if request.auth != null
+        && request.auth.uid == resource.data.ownerId;
+    }
+
+    // Phase 4a key backup: mesh private keys, owner-only (lets the owner's
+    // other phones harvest relays sealed to this device).
+    match /deviceKeys/{deviceId} {
+      allow create: if request.auth != null
+        && request.auth.uid == request.resource.data.userId;
+      allow read, update, delete: if request.auth != null
+        && request.auth.uid == resource.data.userId;
+    }
+  }
+}

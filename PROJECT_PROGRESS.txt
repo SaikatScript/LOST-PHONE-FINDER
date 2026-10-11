@@ -1,0 +1,108 @@
+================================================================================
+LOST PHONE FINDER — FULL PROGRESS REPORT (till 11 Oct 2026)
+================================================================================
+App: Android anti-theft / lost-phone recovery (Expo + Firebase serverless)
+Repo: D:\Kicchu hbe na\App | Expo SDK 57 | Expo Router (src/app/) | JS (ES6+)
+EAS: @saikat_03/lost-phone-finder (ID 6bc0833c-4303-4942-9ba4-b8ebce123e57)
+Firebase: project "Saikat" (saikat-e8982), Spark plan, Auth + Firestore
+
+--------------------------------------------------------------------------------
+0. SCAFFOLD & PROJECT DECISIONS
+--------------------------------------------------------------------------------
+- Blank Expo template scaffolded, converted to Expo Router (blueprint said
+  React Navigation; Expo Router is the current standard and is built on it).
+- Packages (all via `npx expo install`, SDK 57 compatible): expo-router,
+  firebase, async-storage, secure-store, device, location, task-manager,
+  battery, react-native-maps, cellular, sms, notifications, sqlite,
+  tweetnacl (+util), react-native-ble-plx, webview, dev-client, web/react-dom.
+- app.json: scheme lostphonefinder, typedRoutes, Metro web bundler,
+  android.package com.lostphonefinder.app, location/SMS/phone/BT permissions.
+- app.config.js (dynamic): Google-maps key from env, expo-sqlite plugin,
+  ble-plx plugin (background BLE). eas.json: development APK profile.
+  .easignore mirrors .gitignore but ALLOWS .env (cloud builds need the keys).
+- Secrets: .env (Firebase + map renderer flag, gitignored). The plaintext
+  Expo credential file found in repo root was used once for login, then
+  gitignored and DELETED. Expo/EAS session active as saikat_03.
+
+--------------------------------------------------------------------------------
+PHASE 1 — SETUP + AUTH + DEVICES ............ DONE, TESTED (user data in Firebase)
+--------------------------------------------------------------------------------
+- Router: / -> /login|/devices; screens login, register, devices (real-time),
+  add-device (registers current phone + model), device/[id], map, mesh.
+- AuthContext: email/password sign-up/in/out, creates users/{uid} doc.
+- Firebase JS SDK with AsyncStorage persistence (works in Expo Go + dev).
+- firestore.rules: owner-only users/devices/locations (+ relays/deviceKeys later).
+- Verified: expo-doctor 21/21, web export OK, real registration visible in console.
+
+--------------------------------------------------------------------------------
+PHASE 2 — LOCATION TRACKING + MAPS .......... DONE, TESTED ON DEVICE
+--------------------------------------------------------------------------------
+- Background task (TaskManager LOCATION_TASK): GPS every 10 min / 50 m with
+  foreground-service notification -> users/{uid}/devices/{did}/locations +
+  lastLocation/lastBattery/lastUpdate rollup. Foreground watcher fallback
+  (Expo Go Android lacks TaskManager). Battery % via expo-battery.
+- Device screen: Send-location-now, start/stop tracking, live map, 50-fix history.
+- Fleet map (/map): all devices with locations as markers.
+- Map saga: react-native-maps crashed dev builds (no Google key in manifest;
+  Expo Go has its own) -> guarded fallback -> Google billing blocked
+  (OR_BACR2_59, UPI verification) -> Leaflet+OSM in WebView -> RNCWebViewModule
+  missing in old APK (import-time enforcement) -> lazy require fix (+ a
+  cascading router ErrorBoundary error fixed by the same change) -> OSM 403
+  (mobile UA blocked) -> CARTO (then required API key too) -> Esri tiles (free,
+  keyless, verified 200). Renderer flag EXPO_PUBLIC_MAP_RENDERER (tiles|webview).
+  Final: interactive Leaflet + Esri on new binary. Proven on OPPO (Android 16)
+  with live pin + history.
+
+--------------------------------------------------------------------------------
+PHASE 3 — SIM-SWAP DETECTION + ALERTS ....... DONE, TESTED ON DEVICE
+--------------------------------------------------------------------------------
+- Honest deviation: true IMSI/ICCID reads need system privileges — impossible
+  for store apps. Detection is heuristic (expo-cellular carrier/MCC-MNC/ISO).
+  Same-operator swaps may not trip it (documented in code + README).
+- Baseline snapshot at Add Device; check runs on every background batch +
+  manual "Check SIM now"; swap sets simSwapped + isLost and fires a local
+  notification (expo-notifications, no FCM needed).
+- SMS owner fallback via expo-sms composer (prefilled Maps link, user taps
+  send; silent send = future native module). Manual LOST/emergency toggle.
+- Verified on device: "SIM: Jio - 405840 - no swap detected".
+
+--------------------------------------------------------------------------------
+PHASE 4a — MESH CORE (no radio yet) ......... DONE, AWAITING TEST
+--------------------------------------------------------------------------------
+- Evidence: ble-plx README confirms CENTRAL-ONLY (no advertising/GATT server),
+  so phone-as-beacon needs a custom native advertiser (Phase 4b).
+- Shipped: NaCl sealed packets (tweetnacl, per-device keypair in SecureStore +
+  owner-only backup, pubkey on device doc); SQLite store-and-forward queue
+  (24h TTL, 200 cap, memory fallback, web split after a .wasm export break);
+  gateway upload + owner harvest via relays/ collection (owner-only rules);
+  helper BLE scan role (scan->connect->read->enqueue->relay); Mesh screen with
+  device picker, one-tap cloud E2E test, harvest, scan, live queue.
+- Fixed along the way: .easignore excluding 271MB APK/adb (upload 98.8MB->1.1MB).
+
+--------------------------------------------------------------------------------
+DEV BUILDS (all Android development APK, same keystore)
+--------------------------------------------------------------------------------
+1. d492b644 (10 Oct, Phase 2 location+maps) — installed after saga:
+   expired presigned URL -> fresh link; Play Protect block -> scan-off install;
+   "package invalid" red herring (SDK 54 would NOT help: same Android 7+ min).
+2. 07265353 (Phase 2 + webview/maps) — same "invalid package" via Files app;
+   byte-verified (271,316,078 B, 1405 ZIP entries) -> installed via adb (Success).
+   Lesson: USB/adb is the reliable install path; keep USB debugging on.
+3. 65766aaa (Phase 3 SIM/SMS) — adb-installed (272MB), verified on device.
+4. c339a9de (Phase 4a mesh/SQLite/BLE) — QUEUED, install via USB when done.
+
+--------------------------------------------------------------------------------
+PENDING
+--------------------------------------------------------------------------------
+- Phase 4b: custom native advertiser module (advertise + GATT server),
+  foreground service, 2-phone radio validation (OPPO + Motorola ideal pair).
+- Phase 5: battery profiling, UX polish, multi-OEM testing, security audit,
+  production build + Play Store, Cloud Functions owner push (replaces local-only).
+- Follow-ups: silent-SMS native module, Google Maps upgrade (needs Cloud billing),
+  remote wipe/lock/ring commands (blueprint §5.7 buttons).
+- Ops notes: paste updated firestore.rules to console (relays/deviceKeys);
+  dev server: npx expo start --clear (same Wi-Fi); install APKs via adb.
+
+================================================================================
+END OF REPORT
+================================================================================

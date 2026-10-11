@@ -32,6 +32,11 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
+# local tooling / artifacts - never commit
+adb-tools/
+*.apk
+expoidpass.txt
 
 # typescript
 *.tsbuildinfo
