@@ -1,0 +1,77 @@
+================================================================================
+HANDOFF — Lost Phone Finder (resume work here)
+Date: 11 Oct 2026 | Repo: https://github.com/SaikatScript/LOST-PHONE-FINDER.git
+================================================================================
+READ THIS FIRST (human or AI): this file + README.md + FEATURES.txt =
+everything needed to continue. No secrets are stored in this repo, ever.
+
+1. WHAT / WHERE
+--------------------------------------------------------------------------------
+- Android anti-theft app. Expo SDK 57 + Expo Router (src/app/, JS) + Firebase
+  JS SDK (Auth + Firestore). No custom server.
+- EAS: @saikat_03/lost-phone-finder, projectId 6bc0833c-4303-4942-9ba4-b8ebce123e57
+- Firebase: project "Saikat", ID saikat-e8982 (Spark). Auth email/pass + Firestore.
+- Android package: com.lostphonefinder.app. Branch: main.
+
+2. DONE (all on main branch)
+--------------------------------------------------------------------------------
+- Phase 1: auth, devices CRUD, real-time lists. TESTED (data in console).
+- Phase 2: background GPS (10 min/50 m), battery, history, live maps (Leaflet +
+  Esri keyless tiles, EXPO_PUBLIC_MAP_RENDERER=tiles|webview). TESTED on device.
+- Phase 3: SIM-swap heuristics (carrier/MCC-MNC; true IMSI impossible for store
+  apps), LOST toggle, local alerts, SMS composer fallback. TESTED on device.
+- Phase 4a: NaCl sealed packets, per-device keypairs, SQLite queue, relays/
+  gateway upload+harvest, helper BLE scan, Mesh screen. Relay loop PROVEN
+  ("Checked 1, decrypted 1").
+- Phase 4b: custom native module modules/mesh-advertiser (BLE advertiser + GATT
+  server) + beacon toggle. STATUS: build 9b409181 submitted — CHECK whether it
+  finished: `npx eas-cli build:view 9b409181-7176-42e3-a19d-a59d3a413408`.
+  If finished: USB-install via adb (see §5), then 2-phone radio test (§6).
+
+3. NOT DONE (in order)
+--------------------------------------------------------------------------------
+  a. 2-phone BLE radio validation (needs 4b build installed on both phones).
+  b. Phase 5: battery/UX polish, multi-OEM test, security audit, Play release,
+     Cloud-Function owner push. Follow-ups: silent SMS, Google Maps key, ring/lock/wipe.
+
+4. NEW-MACHINE SETUP (nothing below is in the repo — recreate it)
+--------------------------------------------------------------------------------
+  1. Node 22+, `npm install`, `npx expo-doctor` (want 21/21).
+  2. `copy .env.example .env` and fill Firebase web-app values (console >
+     Project Settings > Your apps). NEVER commit .env (gitignored).
+  3. Re-login all CLIs: `npx expo login`, `npx eas-cli login`,
+     `npx firebase-tools login` (each opens a browser flow).
+  4. `npx firebase-tools deploy --only firestore:rules --project saikat-e8982`
+     (or paste firestore.rules in console). firebase.json is committed.
+  5. `npx expo start --clear` (same Wi-Fi as test phones).
+  6. Old APKs/adb-tools are NOT in the repo: rebuild via
+     `npx eas build --profile development --platform android`, or install
+     Android platform-tools for `adb install -r app.apk` (reliable path).
+
+5. LESSONS (don't relearn these)
+--------------------------------------------------------------------------------
+- Install APKs over USB/adb. Files-app installs flake ("invalid package");
+  EAS links expire in 15 min — download immediately. Uninstall old app first
+  on versionCode ties. Play Protect flags dev builds (SMS/BT perms) — allow.
+- New native modules need a NEW dev build; guard new imports with lazy
+  require() or old binaries red-screen (RNCWebViewModule lesson).
+- Hermes has no crypto.getRandomValues — use expo-crypto getRandomBytesAsync,
+  normalize bridge Arrays to Uint8Array. tweetnacl-util: decodeUTF8(str)->bytes,
+  encodeUTF8(bytes)->str (backwards from intuition — caused a real bug).
+- OSM tiles 403 mobile UAs; CARTO needs API keys now; Esri tiles are free/keyless.
+- ble-plx is CENTRAL-ONLY (its own README) — hence the custom advertiser.
+- expo-sms = composer only (user taps send). Same-operator SIM swap invisible.
+- Metro serves JS to dev builds: JS-only fixes need only app reload (--clear
+  if stale). `.easignore` allows `.env` to EAS but blocks `*.apk`, adb-tools.
+
+6. RADIO TEST (when 4b build is on both phones)
+--------------------------------------------------------------------------------
+- Bluetooth ON both, <=10 m apart, SAME Wi-Fi as Metro. Stolen phone: ideally
+  airplane mode + Bluetooth re-enabled (proves offline); helper online.
+- Stolen: Mesh > Start BLE beacon. Helper: Mesh > Helper BLE scan (25 s).
+- Expect: helper-connected + packet-read events, relay uploaded, owner harvest
+  decrypts (source:"mesh" fix). Report exact alert text on any failure.
+
+================================================================================
+END OF HANDOFF
+================================================================================
