@@ -23,10 +23,19 @@ Fixes:
   - tracking.js now asks for Accuracy.High (real GPS) for the background task
     and for "Send location now"; distanceInterval 50 -> 25 m. NOTE: the setting
     applies when tracking starts, so Stop tracking / Start is needed once.
-  - The map defaults to SATELLITE (Esri World Imagery, keyless) with Esri place
-    names on top; the layers button switches to Streets (OpenStreetMap) or
-    Terrain (Esri Topo). Verified by rendering the generated HTML in a browser:
-    village, houses and fields are clearly visible at z16.
+  - The map defaults to SATELLITE (Esri World Imagery, keyless); the layers
+    button switches to Streets (OpenStreetMap) or Terrain (Esri Topo). Verified
+    by rendering the generated HTML in a browser: village, houses and fields are
+    clearly visible at z16/z17.
+  - Follow-up (same day, user reported grey "Map data not yet available"
+    squares when zooming in): measured REAL tile coverage by downloading the
+    tiles at the target coordinates — Esri imagery is sharp to z18 and returns
+    the grey placeholder at z19; Esri Topo stops at z17; OpenStreetMap stops at
+    z16 (solid white after). Each layer now sets maxNativeZoom (18/17/16), so
+    Leaflet enlarges the deepest real tile instead of showing placeholders.
+    The Esri place-names overlay was REMOVED: where it has no data it serves a
+    faint semi-transparent "Map data not yet available" ghost that darkened the
+    imagery. Default single-device zoom raised 16 -> 17.
   - Markers draw an accuracy circle; popups show "Accurate to about N m", the
     fix time and its age; a round button re-centres on the latest fix; scale bar.
   - pushLocation also rolls up lastAccuracy / lastLocationAt / lastLocationSource;

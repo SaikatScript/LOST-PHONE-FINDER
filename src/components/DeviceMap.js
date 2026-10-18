@@ -19,15 +19,26 @@ const MAP_HEIGHT = 340;
 // Google) are blank at z15+ — a blank square is useless when you are trying to
 // walk to your stolen phone. Imagery always shows buildings, fields, roads.
 // Esri order is z/y/x; OSM order is z/x/y.
+//
+// Native zoom coverage, MEASURED by downloading the actual tiles at the target
+// coordinates (24.17 N, 87.90 E):
+//   Esri World Imagery .. sharp to z18; at z19 every tile is the identical
+//                         grey "Map data not yet available" placeholder.
+//   Esri World Topo ..... sharp to z17; placeholder at z18+.
+//   Esri place names .... REMOVED: where it has no label data it serves a faint
+//                         semi-transparent "Map data not yet available" ghost
+//                         that darkened the imagery. Not worth keeping.
+//   OpenStreetMap ....... roads + village names to z16; solid white at z17+.
+// maxNativeZoom tells Leaflet to enlarge the deepest REAL tile instead of
+// requesting tiles that do not exist — that is what removes the grey
+// "Map data not yet available" squares when the user pinches in.
 const ESRI_IMAGERY =
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-const ESRI_LABELS =
-  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
 const ESRI_TOPO =
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}';
 const OSM_TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
-const ATTR = 'Imagery © Esri, Maxar • Labels © Esri • Streets © OpenStreetMap';
+const ATTR = 'Imagery © Esri, Maxar • Streets © OpenStreetMap';
 const n = (z) => Math.pow(2, z);
 const lonToX = (lon, z) => ((lon + 180) / 360) * n(z);
 const latToY = (lat, z) => {
@@ -38,7 +49,7 @@ const esri = (url, z, x, y) => url.replace('{z}', z).replace('{y}', y).replace('
 
 function chooseView(markers) {
   if (markers.length === 0) return { lat: 20.5937, lng: 78.9629, zoom: 5 };
-  if (markers.length === 1) return { lat: markers[0].lat, lng: markers[0].lng, zoom: 16 };
+  if (markers.length === 1) return { lat: markers[0].lat, lng: markers[0].lng, zoom: 17 };
   const lats = markers.map((m) => m.lat);
   const lngs = markers.map((m) => m.lng);
   const spanLon = Math.max(...lngs) - Math.min(...lngs) || 0.01;
@@ -53,10 +64,9 @@ function chooseView(markers) {
   };
 }
 
-// --- Pure-JS fallback: satellite tiles + place-name overlay ---------------
+// --- Pure-JS fallback: satellite tiles ------------------------------------
 function TileGrid({ markers }) {
   const [width, setWidth] = useState(0);
-  const [labelsOn, setLabelsOn] = useState(true);
   const { lat, lng, zoom } = chooseView(markers);
   const total = n(zoom);
 
@@ -89,11 +99,6 @@ function TileGrid({ markers }) {
       tiles.push(
         <Image key={`img/${x}/${y}`} source={{ uri: esri(ESRI_IMAGERY, zoom, wrappedX, y) }} style={pos} />
       );
-      if (labelsOn) {
-        tiles.push(
-          <Image key={`lbl/${x}/${y}`} source={{ uri: esri(ESRI_LABELS, zoom, wrappedX, y) }} style={pos} />
-        );
-      }
     }
   }
 
@@ -126,9 +131,6 @@ function TileGrid({ markers }) {
           );
         })}
         <Text style={styles.attr}>{ATTR}</Text>
-        <Text style={styles.layerToggle} onPress={() => setLabelsOn(!labelsOn)}>
-          {labelsOn ? 'Place names: on' : 'Place names: off'}
-        </Text>
       </View>
     </View>
   );
@@ -151,17 +153,15 @@ html,body,#map{height:100%;margin:0;padding:0;background:#e5e3df}
 <button id="recenter" title="Centre on the latest fix">◎</button>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-var imagery = L.tileLayer('${ESRI_IMAGERY}', { maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' });
-var labels = L.tileLayer('${ESRI_LABELS}', { maxZoom: 19, opacity: 0.9, attribution: 'Place names &copy; Esri' });
-var streets = L.tileLayer('${OSM_TILES}', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' });
-var topo = L.tileLayer('${ESRI_TOPO}', { maxZoom: 19, attribution: 'Terrain &copy; Esri' });
+var imagery = L.tileLayer('${ESRI_IMAGERY}', { maxZoom: 19, maxNativeZoom: 18, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' });
+var streets = L.tileLayer('${OSM_TILES}', { maxZoom: 19, maxNativeZoom: 16, attribution: '&copy; OpenStreetMap contributors' });
+var topo = L.tileLayer('${ESRI_TOPO}', { maxZoom: 19, maxNativeZoom: 17, attribution: 'Terrain &copy; Esri' });
 
 var map = L.map('map', { center: [20.5937, 78.9629], zoom: 5, zoomControl: true });
 imagery.addTo(map);
-labels.addTo(map);
 L.control.layers(
   { 'Satellite': imagery, 'Streets': streets, 'Terrain': topo },
-  { 'Place names': labels },
+  {},
   { position: 'topright', collapsed: true }
 ).addTo(map);
 L.control.scale({ imperial: false }).addTo(map);
@@ -204,15 +204,15 @@ window.setMarkers = function (list) {
     pts.push([m.lat, m.lng]);
   });
   if (firstLoad && pts.length) {
-    if (pts.length === 1) map.setView(pts[0], 16);
-    else map.fitBounds(pts, { padding: [30, 30] });
+    if (pts.length === 1) map.setView(pts[0], 17);
+    else map.fitBounds(pts, { padding: [30, 30], maxZoom: 17 });
     firstLoad = false;
   }
 };
 
 document.getElementById('recenter').onclick = function () {
-  if (pts.length === 1) map.setView(pts[0], Math.max(map.getZoom(), 16));
-  else if (pts.length > 1) map.fitBounds(pts, { padding: [30, 30] });
+  if (pts.length === 1) map.setView(pts[0], Math.max(map.getZoom(), 17));
+  else if (pts.length > 1) map.fitBounds(pts, { padding: [30, 30], maxZoom: 17 });
 };
 
 // Marker circles need their own renderer reset when the map is resized.
@@ -301,14 +301,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#333',
     backgroundColor: 'rgba(255,255,255,0.7)',
-  },
-  layerToggle: {
-    position: 'absolute',
-    left: 4,
-    bottom: 2,
-    fontSize: 10,
-    color: '#0a4',
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    paddingHorizontal: 4,
   },
 });
