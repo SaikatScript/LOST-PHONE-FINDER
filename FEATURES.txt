@@ -21,8 +21,12 @@ LOCATION TRACKING (Phase 2) — TESTED ON DEVICE
 12. Battery % captured with every fix.
 13. Location history (last 50 fixes) per device.
 14. Live map with latest (red) + history (blue) pins; interactive pan/zoom.
-15. Keyless Esri street tiles (no Google billing needed).
-
+15. Map layers: Satellite (default, Esri World Imagery — street rasters are blank
+    in rural India), Streets (OpenStreetMap), Terrain, plus an optional place-name
+    overlay. Accuracy circle per fix, popup with accuracy + fix age, ◎ re-centre
+    button, scale bar. All keyless (no Google billing). Fixes are GPS-quality
+    (Accuracy.High); the device screen shows ±accuracy and warns when the newest
+    fix is more than 3 minutes old.
 SIM-SWAP & THEFT ALERTS (Phase 3) — TESTED ON DEVICE
 --------------------------------------------------------------------------------
 16. SIM baseline snapshot at registration (carrier + MCC/MNC + ISO).

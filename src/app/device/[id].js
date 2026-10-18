@@ -20,6 +20,15 @@ export default function DeviceDetail() {
   const [tracking, setTracking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Clock for "this fix is N minutes old". Kept in state (updated by an effect)
+  // so the render body never calls Date.now() directly.
+  const [now, setNow] = useState(0);
+
+  useEffect(() => {
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -166,6 +175,8 @@ export default function DeviceDetail() {
     title: i === 0 ? 'Latest' : `Fix ${history.length - i}`,
     description: `Battery ${h.battery ?? '?'}% • ${h.source ?? ''}`,
     color: i === 0 ? 'red' : 'blue',
+    acc: h.accuracy ?? null,
+    at: h.timestamp?.toDate ? h.timestamp.toDate().getTime() : null,
   }));
   const fmtTs = (ts) => {
     try {
@@ -184,9 +195,22 @@ export default function DeviceDetail() {
       </Text>
       <Text style={styles.sub}>
         {latest
-          ? `Latest fix: ${latest.lat.toFixed(5)}, ${latest.lng.toFixed(5)} (${fmtTs(latest.timestamp)})`
+          ? `Latest fix: ${latest.lat.toFixed(5)}, ${latest.lng.toFixed(5)}` +
+            `${latest.accuracy ? ` (±${Math.round(latest.accuracy)} m)` : ''}` +
+            ` (${fmtTs(latest.timestamp)})`
           : 'No fixes yet — send the first location.'}
       </Text>
+      {(() => {
+        if (!latest || !now) return null;
+        const ageMin = Math.round((now - new Date(latest.timestamp).getTime()) / 60000);
+        if (!Number.isFinite(ageMin) || ageMin < 3) return null;
+        return (
+          <Text style={styles.warn}>
+            This fix is {ageMin < 90 ? `${ageMin} min` : `${Math.round(ageMin / 60)} h`} old — tap
+            “Send location now” for a fresh GPS reading.
+          </Text>
+        );
+      })()}
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <View style={styles.row}>
@@ -257,6 +281,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: '700' },
   sub: { color: '#555' },
   error: { color: 'red' },
+  warn: { color: '#b45309', fontSize: 12, fontWeight: '600' },
   row: { flexDirection: 'row', gap: 8 },
   button: {
     flex: 1,

@@ -30,11 +30,16 @@ export async function pushLocation(userId, deviceId, { lat, lng, accuracy, batte
   };
   await addDoc(deviceLocationsRef(userId, deviceId), payload);
   // Rollup for list/map markers (blueprint §4: lastLocation, lastBattery, lastUpdate).
+  // Accuracy + a client clock reading also ride along, so the map can say how
+  // precise the fix is and how old it is without reading the whole subcollection.
   await setDoc(
     doc(db, 'users', userId, 'devices', deviceId),
     {
       lastLocation: { latitude: lat, longitude: lng },
       lastBattery: battery ?? null,
+      lastAccuracy: accuracy ?? null,
+      lastLocationAt: Date.now(),
+      lastLocationSource: source,
       lastUpdate: serverTimestamp(),
     },
     { merge: true }

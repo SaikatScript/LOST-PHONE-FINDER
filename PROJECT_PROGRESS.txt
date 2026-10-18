@@ -7,6 +7,36 @@ EAS: @saikat_03/lost-phone-finder (ID 6bc0833c-4303-4942-9ba4-b8ebce123e57)
 Firebase: project "Saikat" (saikat-e8982), Spark plan, Auth + Firestore
 
 --------------------------------------------------------------------------------
+MAP FIX (19 Oct 2026) - "the map is too old / does not show the location"
+--------------------------------------------------------------------------------
+Symptom: the map was a blank pale square with a single river line, and fixes
+were ~600 m off.
+Two real causes:
+  1. Tiles: Esri World Street Map is years out of date and BLANK at z15+ in
+     rural India (checked by downloading the exact z15 tile - river only).
+     Google's street raster is blank there too; OpenStreetMap has village names
+     (Khargram, Murshidabad) but no buildings.
+  2. Accuracy: the tracker asked Android for Accuracy.Balanced = Wi-Fi/cell
+     positioning (+-100 m .. 1 km). That is why two phones in the same room
+     reported positions 1.2 km apart.
+Fixes:
+  - tracking.js now asks for Accuracy.High (real GPS) for the background task
+    and for "Send location now"; distanceInterval 50 -> 25 m. NOTE: the setting
+    applies when tracking starts, so Stop tracking / Start is needed once.
+  - The map defaults to SATELLITE (Esri World Imagery, keyless) with Esri place
+    names on top; the layers button switches to Streets (OpenStreetMap) or
+    Terrain (Esri Topo). Verified by rendering the generated HTML in a browser:
+    village, houses and fields are clearly visible at z16.
+  - Markers draw an accuracy circle; popups show "Accurate to about N m", the
+    fix time and its age; a round button re-centres on the latest fix; scale bar.
+  - pushLocation also rolls up lastAccuracy / lastLocationAt / lastLocationSource;
+    the device screen shows (+-N m) and warns when the newest fix is >3 min old.
+  - The Leaflet page is built once and markers are pushed with injectJavaScript,
+    so a new fix no longer reloads the WebView (pan/zoom survive).
+OSM / Carto / Google / Esri tiles were all reachable from this network; Esri
+imagery + labels + topo are used because they are keyless and consistent.
+
+--------------------------------------------------------------------------------
 0. SCAFFOLD & PROJECT DECISIONS
 --------------------------------------------------------------------------------
 - Blank Expo template scaffolded, converted to Expo Router (blueprint said

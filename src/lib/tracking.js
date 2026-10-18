@@ -76,7 +76,9 @@ export async function ensureTrackingPermissions() {
 }
 
 export async function pushCurrentLocationNow(userId, deviceId, source = 'gps') {
-  const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+  // High = real GPS. Balanced (the old value) resolves from Wi-Fi/cell towers,
+  // which is why fixes could be 600 m off — useless for finding a phone.
+  const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
   const battery = await readBatteryPercent();
   await pushLocation(userId, deviceId, {
     lat: pos.coords.latitude,
@@ -100,9 +102,11 @@ export async function startTracking(userId, deviceId) {
     const started = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
     if (started) await Location.stopLocationUpdatesAsync(LOCATION_TASK);
     await Location.startLocationUpdatesAsync(LOCATION_TASK, {
-      accuracy: Location.Accuracy.Balanced,
+      // High = GPS. Balanced was giving Wi-Fi/cell fixes (±600 m here), which
+      // are not good enough to walk to a stolen phone.
+      accuracy: Location.Accuracy.High,
       timeInterval: 10 * 60 * 1000,
-      distanceInterval: 50,
+      distanceInterval: 25,
       showsBackgroundLocationIndicator: false,
       foregroundService: {
         notificationTitle: 'Lost Phone Finder',
@@ -116,9 +120,9 @@ export async function startTracking(userId, deviceId) {
     if (foregroundSub) foregroundSub.remove();
     foregroundSub = await Location.watchPositionAsync(
       {
-        accuracy: Location.Accuracy.Balanced,
+        accuracy: Location.Accuracy.High,
         timeInterval: 10 * 60 * 1000,
-        distanceInterval: 50,
+        distanceInterval: 25,
       },
       async (pos) => {
         try {
