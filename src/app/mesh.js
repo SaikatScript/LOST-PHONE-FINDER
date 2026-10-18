@@ -41,6 +41,9 @@ export default function Mesh() {
       router.replace('/login');
       return;
     }
+    // Initial hydration for this screen (queue/backend/BLE availability). The
+    // disable below covers the intended one-shot setState inside refresh().
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh().catch(() => {});
     return subscribeToDevices(
       user.uid,
@@ -121,6 +124,7 @@ export default function Mesh() {
       let found = 0;
       const { packets, stats, trace } = await helperScanOnce(async (packet) => {
         found += 1;
+        console.log('[mesh] relaying packet', found, packet.packetId);
         await enqueuePacket(packet);
         try {
           await uploadRelay(packet);
@@ -301,8 +305,7 @@ export default function Mesh() {
       </Pressable>
       {beaconStatus ? <Text style={styles.status}>{beaconStatus}</Text> : null}
       <Text style={styles.hint}>
-        Beacon broadcasts this phone's sealed location to nearby helpers over Bluetooth —
-        the offline path. No internet needed on this phone while beaconing.
+        {'Beacon broadcasts this phone\u2019s sealed location to nearby helpers over Bluetooth \u2014 the offline path. No internet needed on this phone while beaconing.'}
       </Text>
 
       <Text style={styles.section}>Queue ({queue.length})</Text>

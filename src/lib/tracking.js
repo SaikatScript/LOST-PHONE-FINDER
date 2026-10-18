@@ -110,7 +110,7 @@ export async function startTracking(userId, deviceId) {
       },
     });
     return { mode: 'background' };
-  } catch (e) {
+  } catch {
     // Fallback (e.g. Expo Go Android where TaskManager is unavailable):
     // foreground watcher that pushes each update.
     if (foregroundSub) foregroundSub.remove();

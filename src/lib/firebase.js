@@ -30,7 +30,7 @@ try {
   auth = initializeAuth(firebaseApp, {
     persistence: getReactNativePersistence(AsyncStorage),
   });
-} catch (e) {
+} catch {
   // initializeAuth throws if already initialized (e.g. Fast Refresh).
   auth = getAuth(firebaseApp);
 }

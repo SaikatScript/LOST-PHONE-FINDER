@@ -13,7 +13,6 @@ export const MESH_PACKET_CHAR_UUID = '6f7a4d2e-7a6c-4f5e-9b1a-2c3d4e5f6072';
 // A sealed location packet measures ~417 JSON bytes (~556 base64 chars), far
 // beyond the default BLE payload of 20 bytes — Android's stack follows long
 // reads by itself, so a single read can still deliver the whole packet.
-const PACKET_CHARS = 500; // used as a sanity reference when reporting read sizes
 
 let manager = null;
 let scanning = false;
