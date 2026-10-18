@@ -41,9 +41,13 @@ OFFLINE MESH (Phase 4a + 4b)
 24. SQLite store-and-forward queue (24h TTL, 200 cap, memory fallback).
 25. Gateway relay upload + owner harvest/decrypt into device history.
 26. Mesh screen: device picker, one-tap cloud relay test, harvest, live queue.
-27. Helper BLE scan role (find -> connect -> read packet -> relay).
+27. Helper BLE scan role (find -> connect -> read packet -> relay). VERIFIED.
 28. Phone-as-beacon role via custom native advertiser module (BluetoothLeAdvertiser
-    + GATT server, helper-connected/packet-read events). Awaiting radio test.
+    + GATT server, helper-connected/packet-read events). VERIFIED end-to-end on
+    2 phones 19 Oct 2026: beacon -> helper read -> relay -> harvest "5/5 decrypted".
+29. Radio diagnostics: "Radio check" lists every nearby BLE device; scan result
+    alerts report heard/connected/read counts plus a per-step trace; the beacon
+    status line shows the real advertising state (or the failure code).
     (Proven: cloud relay loop "Checked 1, decrypted 1". Radio test needs the
     4b build on 2 phones, Bluetooth on, ~10 m apart, stolen phone offline.)
 

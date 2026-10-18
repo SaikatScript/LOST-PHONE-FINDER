@@ -61,7 +61,7 @@ npx firebase-tools deploy --only firestore:rules --project <your-id>
 
 ## Status & limits (honest)
 
-- Phases 1–3 tested on real devices; Phase 4a relay loop proven (`decrypted 1`); 4b radio pending 2-phone test.
+- Phases 1–3 tested on real devices; Phase 4a cloud relay proven (`decrypted 1`); **Phase 4b BLE radio verified on 2 phones (Samsung A50 ↔ OPPO, 19 Oct 2026): beacon → helper read → relay → harvest `checked 5, decrypted 5`**.
 - True IMSI reads are impossible for store apps (system privilege) — SIM detection is heuristic.
 - `expo-sms` opens the composer (one user tap); silent SMS needs a future native module.
 - Mesh needs nearby app users to matter; background BLE obeys Android/Doze limits.

@@ -10,6 +10,10 @@ export async function helperScanOnce() {
   throw new Error('BLE scanning is Android-only.');
 }
 
+export async function scanNearbyDevices() {
+  throw new Error('BLE scanning is Android-only.');
+}
+
 export function stopHelperScan() {}
 
 export async function startBeacon() {

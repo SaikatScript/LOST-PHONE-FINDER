@@ -7,7 +7,16 @@ import { subscribeToDevices } from '../lib/devices';
 import { ensureDeviceKeys, sealLocationPacket } from '../lib/meshCrypto';
 import { enqueuePacket, listPackets, queueBackend, removePacket } from '../lib/meshQueue';
 import { uploadRelay, harvestRelays } from '../lib/meshRelay';
-import { isBleAvailable, helperScanOnce, startBeacon, stopBeacon } from '../lib/meshBle';
+import { isBleAvailable, helperScanOnce, scanNearbyDevices, startBeacon, stopBeacon, addBeaconListener } from '../lib/meshBle';
+
+// Android's AdvertiseCallback error codes → human text (Phase 4b beacon).
+const ADV_ERROR = {
+  1: 'the advertising packet is too large for this phone',
+  2: 'too many apps are already advertising',
+  3: 'advertising is already running',
+  4: 'internal Bluetooth stack error',
+  5: 'this phone does not support BLE advertising',
+};
 
 export default function Mesh() {
   const { user } = useAuth();
@@ -18,6 +27,7 @@ export default function Mesh() {
   const [ble, setBle] = useState(false);
   const [busy, setBusy] = useState(false);
   const [beaconOn, setBeaconOn] = useState(false);
+  const [beaconStatus, setBeaconStatus] = useState('');
   const [info, setInfo] = useState('');
 
   const refresh = async () => {
@@ -106,9 +116,10 @@ export default function Mesh() {
   const onScan = async () => {
     if (!guard()) return;
     setBusy(true);
+    setInfo('Scanning for stolen-phone beacons…');
     try {
       let found = 0;
-      await helperScanOnce(async (packet) => {
+      const { packets, stats, trace } = await helperScanOnce(async (packet) => {
         found += 1;
         await enqueuePacket(packet);
         try {
@@ -116,7 +127,22 @@ export default function Mesh() {
         } catch {}
         await refresh();
       }, 25000);
-      Alert.alert('Helper scan', `Scan finished, ${found} stolen packet(s) relayed.`);
+      // Report WHY nothing was found, not just that nothing was found.
+      let verdict;
+      if (stats.read > 0) {
+        verdict = `${stats.read} packet(s) read and relayed.`;
+      } else if (stats.seen === 0) {
+        verdict =
+          'No mesh beacon heard. Either the other phone is not beaconing, or it is out of range. ' +
+          'Run "Radio check" on this phone to confirm its own Bluetooth scanning works.';
+      } else if (stats.connected === 0) {
+        verdict = `Heard ${stats.seen} beacon(s) but could not connect. First error: ${stats.errors[0] ?? 'unknown'}`;
+      } else {
+        verdict = `Connected to ${stats.connected} beacon(s) but the packet read failed. First error: ${stats.errors[0] ?? 'unknown'}`;
+      }
+      const traceText = trace?.length ? `\n\nSteps: ${trace.join(' → ')}` : '';
+      setInfo(`Scan: heard ${stats.seen}, connected ${stats.connected}, read ${stats.read}.`);
+      Alert.alert('Helper scan', `${verdict}\n\n(packets handled: ${packets.length})${traceText}`);
     } catch (e) {
       Alert.alert('Scan failed', e.message);
     } finally {
@@ -124,6 +150,65 @@ export default function Mesh() {
       refresh().catch(() => {});
     }
   };
+
+  // Radio self-check: is THIS phone's BLE working at all? Lists every nearby
+  // BLE device with no filter, so an empty result points at permissions/radio
+  // or Location being off, while a non-empty result clears the phone.
+  const onRadioCheck = async () => {
+    if (!guard()) return;
+    setBusy(true);
+    setInfo('Radio check: listing every nearby BLE device…');
+    try {
+      const list = await scanNearbyDevices(8000);
+      setInfo(`Radio check: ${list.length} BLE device(s) heard.`);
+      Alert.alert(
+        'Radio check',
+        list.length
+          ? `Bluetooth scanning works — heard ${list.length} device(s):\n\n` +
+              list.slice(0, 8).join('\n') +
+              (list.length > 8 ? `\n…+${list.length - 8} more` : '')
+          : 'Bluetooth scanning heard NOTHING nearby.\n\nCheck: Bluetooth ON, Location ON (required by Android for BLE scanning on Android 11), "Nearby devices" permission granted.'
+      );
+    } catch (e) {
+      Alert.alert('Radio check failed', e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Live beacon status from the native module (Phase 4b). The Kotlin side emits
+  // started / error / helper-connected / packet-read events. Surfacing "error"
+  // here is what turns a silent advertising failure into a visible one.
+  useEffect(() => {
+    let sub;
+    try {
+      sub = addBeaconListener((evt) => {
+        const type = evt?.type;
+        if (!type) return;
+        if (type === 'error') {
+          const code = /code (\d+)/.exec(evt.message ?? '')?.[1];
+          const why = (code && ADV_ERROR[code]) || evt.message || 'unknown error';
+          setBeaconOn(false);
+          setBeaconStatus(`Beacon FAILED: ${why}`);
+          Alert.alert('Beacon failed', why);
+        } else if (type === 'started') {
+          setBeaconOn(true);
+          setBeaconStatus('Beacon: advertising ✓');
+        } else if (type === 'helper-connected') {
+          setBeaconStatus(`Beacon: helper connected (${evt.device ?? '?'})`);
+        } else if (type === 'packet-read') {
+          setBeaconStatus(`Beacon: packet served to helper (${evt.device ?? '?'})`);
+        }
+      });
+    } catch {
+      // native beacon module absent on this build — the toggle reports it
+    }
+    return () => {
+      try {
+        sub?.remove?.();
+      } catch {}
+    };
+  }, []);
 
   // Stolen role: seal this phone's current fix and broadcast it over BLE for
   // nearby helpers. Toggle off when done (beacon dies with the app anyway).
@@ -134,6 +219,7 @@ export default function Mesh() {
       if (beaconOn) {
         await stopBeacon();
         setBeaconOn(false);
+        setBeaconStatus('Beacon stopped.');
         setInfo('Beacon stopped.');
         return;
       }
@@ -151,6 +237,7 @@ export default function Mesh() {
       });
       await startBeacon(packet);
       setBeaconOn(true);
+      setBeaconStatus('Beacon: starting… (waiting for the Bluetooth stack to confirm)');
       setInfo('Beacon ON — nearby helpers can now find this phone over BLE.');
     } catch (e) {
       Alert.alert('Beacon failed', e.message);
@@ -170,7 +257,7 @@ export default function Mesh() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Offline mesh (Phase 4a)</Text>
+      <Text style={styles.title}>Offline mesh (Phase 4a + 4b)</Text>
       <Text style={styles.sub}>
         Queue: {backend} • {queue.length} packet(s) • BLE scan: {ble ? 'ready' : 'needs new build'}
       </Text>
@@ -202,11 +289,17 @@ export default function Mesh() {
           <Text style={styles.buttonText}>Helper BLE scan</Text>
         </Pressable>
       </View>
+      <View style={styles.row}>
+        <Pressable style={[styles.button, styles.buttonAlt]} onPress={onRadioCheck} disabled={busy}>
+          <Text style={styles.buttonText}>Radio check (list nearby BLE)</Text>
+        </Pressable>
+      </View>
       <Pressable style={styles.button} onPress={onToggleBeacon} disabled={busy}>
         <Text style={styles.buttonText}>
           {beaconOn ? 'Stop BLE beacon (stolen role)' : 'Start BLE beacon (stolen role)'}
         </Text>
       </Pressable>
+      {beaconStatus ? <Text style={styles.status}>{beaconStatus}</Text> : null}
       <Text style={styles.hint}>
         Beacon broadcasts this phone's sealed location to nearby helpers over Bluetooth —
         the offline path. No internet needed on this phone while beaconing.
@@ -244,6 +337,8 @@ const styles = StyleSheet.create({
   },
   buttonText: { color: '#fff', fontWeight: '600', textAlign: 'center' },
   chip: { borderWidth: 1, borderColor: '#111', borderRadius: 16, padding: 8, marginRight: 8 },
+  buttonAlt: { backgroundColor: '#0b5d1e' },
+  status: { color: '#0b5d1e', fontSize: 12, fontWeight: '600' },
   chipOn: { backgroundColor: '#111' },
   chipTextOn: { color: '#fff' },
   item: { paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#eee' },

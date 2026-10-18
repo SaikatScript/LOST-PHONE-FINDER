@@ -92,10 +92,40 @@ DEV BUILDS (all Android development APK, same keystore)
 4. c339a9de (Phase 4a mesh/SQLite/BLE) — QUEUED, install via USB when done.
 
 --------------------------------------------------------------------------------
+PHASE 4b COMPLETE — BLE beacon + helper relay PROVEN ON HARDWARE (19 Oct 2026)
+--------------------------------------------------------------------------------
+Build 9b409181 (Kotlin compiled clean in EAS). Installed on both phones:
+  Samsung A50 (Android 11, SDK 30)  +  OPPO CPH2729 (Android 16, SDK 36).
+Proof chain observed on device:
+  beacon advertises -> helper scans (unfiltered, JS-side UUID match) -> connect
+  -> GATT read 568 base64 chars / 426 bytes -> JSON.parse OK -> SQLite queue
+  -> relay uploaded -> owner harvest "checked 5, decrypted 5" -> 5 fixes in
+  History at 01:19:16-20. The Samsung's own queue held only 1 packet, so the
+  other 4 were relayed by the OPPO = genuine 2-phone BLE relay.
+Bugs found + fixed while proving it (all JS-side, no rebuild needed):
+  1. Beacon returned success before Android confirmed advertising -> now listens
+     to AdvertiseCallback; UI shows "advertising OK" or the real error code.
+  2. Helper scan restarted with a no-op callback after any failure -> silently
+     deaf; now resumes with the same listener + 400 ms settle delay.
+  3. Scan used Android's service-UUID ScanFilter -> returns nothing on some
+     Samsung stacks; now unfiltered scan + JS UUID matching.
+  4. encodeUTF8 was missing from the tweetnacl-util import in meshBle.native.js
+     -> ReferenceError swallowed by a bare catch and misreported as "packet
+     truncated". The packet had been arriving intact all along.
+  5. ble-plx 3.5.1: discoverAllServicesAndCharacteristics() resolves to the
+     Device, NOT a Service[] — services come from connected.services().
+Measured facts worth keeping:
+  sealed packet = 417 JSON bytes / ~556-568 base64 chars; default BLE payload
+  is 20 bytes, but Android's stack follows long reads by itself (one read
+  returned all 568 chars at MTU 512). Advertise payload = 21 of 31 bytes.
+  Samsung rotates its BLE address, so the same phone appears as several MACs
+  and some connects fail with "Operation was cancelled" — harmless, keep going.
+New UI affordances: "Radio check (list nearby BLE)" + per-step scan trace in the
+result alert + live beacon status line.
+
+--------------------------------------------------------------------------------
 PENDING
 --------------------------------------------------------------------------------
-- Phase 4b: custom native advertiser module (advertise + GATT server),
-  foreground service, 2-phone radio validation (OPPO + Motorola ideal pair).
 - Phase 5: battery profiling, UX polish, multi-OEM testing, security audit,
   production build + Play Store, Cloud Functions owner push (replaces local-only).
 - Follow-ups: silent-SMS native module, Google Maps upgrade (needs Cloud billing),

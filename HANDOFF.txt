@@ -24,14 +24,20 @@ everything needed to continue. No secrets are stored in this repo, ever.
   gateway upload+harvest, helper BLE scan, Mesh screen. Relay loop PROVEN
   ("Checked 1, decrypted 1").
 - Phase 4b: custom native module modules/mesh-advertiser (BLE advertiser + GATT
-  server) + beacon toggle. STATUS: build 9b409181 submitted — CHECK whether it
-  finished: `npx eas-cli build:view 9b409181-7176-42e3-a19d-a59d3a413408`.
-  If finished: USB-install via adb (see §5), then 2-phone radio test (§6).
+  server) + beacon toggle. **DONE + VERIFIED ON HARDWARE 19 Oct 2026** (build
+  9b409181). Chain proven: beacon -> helper read 568 base64 chars -> queue ->
+  relay -> harvest "checked 5, decrypted 5" -> 5 fixes in History. The Samsung's
+  queue held only 1 packet, so the other 4 came from the second phone = real
+  2-phone BLE relay. Bugs fixed to get there (all JS-side): beacon used to
+  report success before AdvertiseCallback confirmed; scan restart used a no-op
+  callback and Android's ScanFilter; encodeUTF8 was missing from the
+  tweetnacl-util import (threw ReferenceError inside a bare catch, misreported
+  as "packet truncated"); ble-plx 3.5.1 discoverAllServicesAndCharacteristics()
+  resolves to Device, not Service[] (use connected.services()).
 
 3. NOT DONE (in order)
 --------------------------------------------------------------------------------
-  a. 2-phone BLE radio validation (needs 4b build installed on both phones).
-  b. Phase 5: battery/UX polish, multi-OEM test, security audit, Play release,
+  a. Phase 5: battery/UX polish, multi-OEM test, security audit, Play release,
      Cloud-Function owner push. Follow-ups: silent SMS, Google Maps key, ring/lock/wipe.
 
 4. NEW-MACHINE SETUP (nothing below is in the repo — recreate it)
@@ -64,13 +70,24 @@ everything needed to continue. No secrets are stored in this repo, ever.
 - Metro serves JS to dev builds: JS-only fixes need only app reload (--clear
   if stale). `.easignore` allows `.env` to EAS but blocks `*.apk`, adb-tools.
 
-6. RADIO TEST (when 4b build is on both phones)
+6. RADIO TEST (PROVEN 19 Oct 2026 — reproduce in 4 taps)
 --------------------------------------------------------------------------------
-- Bluetooth ON both, <=10 m apart, SAME Wi-Fi as Metro. Stolen phone: ideally
-  airplane mode + Bluetooth re-enabled (proves offline); helper online.
-- Stolen: Mesh > Start BLE beacon. Helper: Mesh > Helper BLE scan (25 s).
-- Expect: helper-connected + packet-read events, relay uploaded, owner harvest
-  decrypts (source:"mesh" fix). Report exact alert text on any failure.
+- Both phones: Bluetooth ON, Location ON, power saving OFF, screens awake,
+  2-3 m apart, same Wi-Fi as Metro.
+- Stolen: Mesh > Start BLE beacon -> status must read "Beacon: advertising".
+- Helper: Mesh > Radio check (should list nearby BLE devices) then Helper BLE
+  scan -> "1 packet(s) read and relayed"; beacon side shows "packet served".
+- Owner account: Harvest my relays -> "checked N, decrypted N" -> fixes appear
+  in that device's History.
+- If it fails: the alert now prints a per-step trace (found beacon -> connected
+  -> mtu -> services -> characteristics -> read/parse) and quotes the decoded
+  payload head. Beacon status shows the AdvertiseCallback failure code.
+- Measured: sealed packet 417 JSON bytes (~568 base64 chars) vs 20-byte default
+  BLE payload — Android's stack handles the long read itself. Same phone shows
+  several MACs (BLE address rotation) and may throw "Operation was cancelled".
+- Wireless logs without USB: Developer options > Wireless debugging > ON; then
+  `adb mdns services` to get the `_adb-tls-pairing` port, `adb pair <ip:port>
+  <code>` with the 6-digit code, then `adb connect <ip:connect-port>`.
 
 ================================================================================
 END OF HANDOFF
