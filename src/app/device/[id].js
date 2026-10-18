@@ -69,6 +69,13 @@ export default function DeviceDetail() {
           'Background updates are unavailable in Expo Go on Android. Use a dev build for true background tracking.'
         );
       }
+      // Android 13+ hides the persistent tracking notification (and any theft
+      // alert) without POST_NOTIFICATIONS. Ask right here — this is the moment
+      // the permission becomes relevant — but never let a refusal break tracking.
+      try {
+        const { ensureNotificationPermission } = require('../../lib/alerts');
+        await ensureNotificationPermission();
+      } catch {}
     } catch (e) {
       Alert.alert('Tracking failed', e.message);
     } finally {

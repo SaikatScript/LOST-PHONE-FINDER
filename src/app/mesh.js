@@ -93,7 +93,9 @@ export default function Mesh() {
       await refresh();
       Alert.alert(
         'Relay test',
-        `Sealed → queued → uploaded → harvested. Checked ${res.checked}, decrypted ${res.opened}. See device history.`
+        `Sealed → queued → uploaded → harvested. Checked ${res.checked}, decrypted ${res.opened}` +
+          (res.blank ? `, ${res.blank} ping(s) with no position.` : '.') +
+          ' See device history.'
       );
     } catch (e) {
       Alert.alert('Relay test failed', e.message);
@@ -108,7 +110,10 @@ export default function Mesh() {
     try {
       const res = await harvestRelays(user.uid);
       await refresh();
-      setInfo(`Harvested: checked ${res.checked}, decrypted ${res.opened}.`);
+      setInfo(
+        `Harvested: checked ${res.checked}, decrypted ${res.opened}` +
+          (res.blank ? `, ${res.blank} without a position (ping only).` : '.')
+      );
     } catch (e) {
       Alert.alert('Harvest failed', e.message);
     } finally {
@@ -228,21 +233,41 @@ export default function Mesh() {
         return;
       }
       const Location = require('expo-location');
-      const pos = await Location.getCurrentPositionAsync({});
+      // A stolen phone is often indoors, in a bag or in a moving car: a brand-new
+      // GPS fix can take minutes or never arrive. Try briefly, fall back to the
+      // last known fix, and beacon anyway with a blank position rather than
+      // staying silent — a packet with no coordinates still proves the phone is
+      // alive and within radio range of a helper.
+      let fix = await Location.getLastKnownPositionAsync({ maxAge: 15 * 60 * 1000 }).catch(() => null);
+      if (!fix) {
+        fix = await Promise.race([
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null),
+          new Promise((resolve) => setTimeout(() => resolve(null), 12000)),
+        ]);
+      }
+      const hasFix = !!fix?.coords;
       const kp = await ensureDeviceKeys(user.uid, deviceId);
       const packet = await sealLocationPacket({
         ownerId: user.uid,
         deviceId,
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        accuracy: pos.coords.accuracy ?? null,
+        lat: hasFix ? fix.coords.latitude : null,
+        lng: hasFix ? fix.coords.longitude : null,
+        accuracy: hasFix ? fix.coords.accuracy ?? null : null,
         battery: null,
         ownerPubB64: encodeBase64(kp.publicKey),
       });
       await startBeacon(packet);
       setBeaconOn(true);
-      setBeaconStatus('Beacon: starting… (waiting for the Bluetooth stack to confirm)');
-      setInfo('Beacon ON — nearby helpers can now find this phone over BLE.');
+      setBeaconStatus(
+        hasFix
+          ? 'Beacon: starting… (waiting for the Bluetooth stack to confirm)'
+          : 'Beacon: starting… (no GPS fix yet — the packet carries an empty position)'
+      );
+      setInfo(
+        hasFix
+          ? 'Beacon ON — nearby helpers can now find this phone over BLE.'
+          : 'Beacon ON (last-known position unavailable) — helpers can still relay the ping.'
+      );
     } catch (e) {
       Alert.alert('Beacon failed', e.message);
     } finally {

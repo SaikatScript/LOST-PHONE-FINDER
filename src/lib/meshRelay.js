@@ -54,6 +54,7 @@ export async function harvestRelays(userId) {
   const q = query(collection(db, 'relays'), where('ownerId', '==', userId), limit(50));
   const snap = await getDocs(q);
   let opened = 0;
+  let blank = 0;
   for (const d of snap.docs) {
     const r = d.data();
     try {
@@ -62,13 +63,18 @@ export async function harvestRelays(userId) {
         nonce: r.nonce,
         eph: r.eph,
       });
-      await pushLocation(userId, r.deviceId, {
-        lat: fix.lat,
-        lng: fix.lng,
-        accuracy: fix.accuracy,
-        battery: fix.battery,
-        source: 'mesh',
-      });
+      if (fix.lat == null || fix.lng == null) {
+        // Beacon sealed without a GPS fix — nothing to plot, count the ping only.
+        blank += 1;
+      } else {
+        await pushLocation(userId, r.deviceId, {
+          lat: fix.lat,
+          lng: fix.lng,
+          accuracy: fix.accuracy,
+          battery: fix.battery,
+          source: 'mesh',
+        });
+      }
       opened += 1;
     } catch {
       // undecryptable (wrong key/rotation) — drop so it doesn't loop forever
@@ -79,5 +85,5 @@ export async function harvestRelays(userId) {
       // leave for next harvest
     }
   }
-  return { checked: snap.docs.length, opened };
+  return { checked: snap.docs.length, opened, blank };
 }
