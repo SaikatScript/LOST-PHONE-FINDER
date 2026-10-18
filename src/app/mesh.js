@@ -127,13 +127,20 @@ export default function Mesh() {
     setInfo('Scanning for stolen-phone beacons…');
     try {
       let found = 0;
+      const uploaded = new Set();
       const { packets, stats, trace } = await helperScanOnce(async (packet) => {
         found += 1;
-        console.log('[mesh] relaying packet', found, packet.packetId);
         await enqueuePacket(packet);
-        try {
-          await uploadRelay(packet);
-        } catch {}
+        // One upload per packet per scan: the radio may hand us the same beacon
+        // several times (address rotation), and each upload would add another
+        // identical relay document for the owner to decrypt.
+        if (!uploaded.has(packet.packetId)) {
+          uploaded.add(packet.packetId);
+          console.log('[mesh] relaying packet', found, packet.packetId);
+          try {
+            await uploadRelay(packet);
+          } catch {}
+        }
         await refresh();
       }, 25000);
       // Report WHY nothing was found, not just that nothing was found.

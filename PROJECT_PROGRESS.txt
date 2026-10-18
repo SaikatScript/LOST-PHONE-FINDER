@@ -124,6 +124,37 @@ New UI affordances: "Radio check (list nearby BLE)" + per-step scan trace in the
 result alert + live beacon status line.
 
 --------------------------------------------------------------------------------
+CROSS-USER 2-PHONE PROOF (19 Oct 2026, 02:04-02:11 IST) - both sides driven over Wi-Fi adb
+--------------------------------------------------------------------------------
+Setup: Samsung A50 (saikat@outlook.com, beacon/stolen)  <->  OPPO CPH2729
+(saikat@rpconsultancy.net, helper - a DIFFERENT account, which is the real
+scenario: a stranger's phone relays for you).
+  02:04:58  Samsung seals a fresh packet (id WdHHxQyityduvc54cS8c-1792355698968)
+            and starts advertising; status "Beacon: advertising".
+  02:09:37-53 OPPO scans with its OWN beacon off, hears ONE beacon address
+            (70:4D:E1:BA:16:CB), connects 5x, reads 568 b64 chars / 426 bytes
+            each time: "[mesh] read ok" + "[mesh] relaying packet" -> 5 relay docs.
+  02:09:58  OPPO harvest of its own account: "checked 0, decrypted 0" -> it
+            cannot read what it relayed. Proof it is a true helper.
+  02:10:x   Samsung harvest: "checked 5, decrypted 5" -> 4 fixes land in the
+            device history at 02:10:26-31, coordinates 24.17762,87.89685 = the
+            position the Samsung sealed at 02:04:58 (only its key could decrypt).
+Also re-verified on the OPPO alone: Android 16 advertises + scans + reads
+simultaneously; Radio check lists nearby BLE devices.
+Robustness fixes made while running this (all JS-only, pushed):
+  1. Beacon no longer fails without a GPS fix (the OPPO refused to start with
+     "Current location is unavailable"): try a fix, fall back to the last known
+     position, then advertise anyway with an empty position. Harvest counts
+     these as "pings without a position" and never plots a null fix.
+  2. POST_NOTIFICATIONS is now requested when tracking starts - on Android 13+
+     the tracking notification and theft alerts were invisible without it.
+  3. Relay docs are de-duplicated: one upload per packet per scan (was: every
+     re-read of the same rotating-address beacon added another identical relay
+     doc), and the harvest skips packet ids it already folded in.
+Permissions granted on the OPPO (ColorOS blocks "pm grant", so via the app's own
+dialogs): POST_NOTIFICATIONS, READ_PHONE_STATE.
+
+--------------------------------------------------------------------------------
 PENDING
 --------------------------------------------------------------------------------
 - Phase 5: battery profiling, UX polish, multi-OEM testing, security audit,

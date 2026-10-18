@@ -45,6 +45,11 @@ OFFLINE MESH (Phase 4a + 4b)
 28. Phone-as-beacon role via custom native advertiser module (BluetoothLeAdvertiser
     + GATT server, helper-connected/packet-read events). VERIFIED end-to-end on
     2 phones 19 Oct 2026: beacon -> helper read -> relay -> harvest "5/5 decrypted".
+    Cross-account proof the same night: the OPPO (different account) read the
+    Samsung's fresh packet 5x and relayed it; its own harvest found 0 (it cannot
+    read what it relays), while the Samsung harvested 5/5 and got the positions
+    in its history. The beacon also works with no GPS fix (advertises with an
+    empty position rather than refusing to start).
 29. Radio diagnostics: "Radio check" lists every nearby BLE device; scan result
     alerts report heard/connected/read counts plus a per-step trace; the beacon
     status line shows the real advertising state (or the failure code).

@@ -55,8 +55,17 @@ export async function harvestRelays(userId) {
   const snap = await getDocs(q);
   let opened = 0;
   let blank = 0;
+  const seen = new Set();
   for (const d of snap.docs) {
     const r = d.data();
+    if (r.packetId && seen.has(r.packetId)) {
+      // Duplicate relay of a packet already folded in above — drop the copy.
+      try {
+        await deleteDoc(doc(db, 'relays', d.id));
+      } catch {}
+      continue;
+    }
+    if (r.packetId) seen.add(r.packetId);
     try {
       const fix = await openLocationPacket(userId, r.deviceId, {
         body: r.body,
