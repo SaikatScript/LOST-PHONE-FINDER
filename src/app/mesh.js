@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { subscribeToDevices } from '../lib/devices';
 import { ensureDeviceKeys, sealLocationPacket } from '../lib/meshCrypto';
 import { enqueuePacket, listPackets, queueBackend, removePacket } from '../lib/meshQueue';
-import { uploadRelay, harvestRelays } from '../lib/meshRelay';
+import { uploadRelay, harvestRelays, flushQueueAsGateway } from '../lib/meshRelay';
 import { isBleAvailable, helperScanOnce, scanNearbyDevices, startBeacon, stopBeacon, addBeaconListener } from '../lib/meshBle';
 
 // Android's AdvertiseCallback error codes → human text (Phase 4b beacon).
@@ -45,6 +45,15 @@ export default function Mesh() {
     // disable below covers the intended one-shot setState inside refresh().
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh().catch(() => {});
+    // Heal the queue: foreign packets may have been read while this phone was
+    // offline (their relay upload failed). Upload them now so the owner still
+    // gets them. Own sealed packets are skipped inside flushQueueAsGateway.
+    listPackets()
+      .then((queued) => flushQueueAsGateway(user.uid, queued))
+      .then((sent) => {
+        if (sent) refresh().catch(() => {});
+      })
+      .catch(() => {});
     return subscribeToDevices(
       user.uid,
       (ds) => {
@@ -139,6 +148,10 @@ export default function Mesh() {
           console.log('[mesh] relaying packet', found, packet.packetId);
           try {
             await uploadRelay(packet);
+            // Uploaded — drop it from the local queue. If the write failed
+            // (helper offline), the packet stays queued and the flush on the
+            // next mesh-screen visit uploads it instead.
+            await removePacket(packet.packetId);
           } catch {}
         }
         await refresh();
