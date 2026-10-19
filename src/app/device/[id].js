@@ -412,6 +412,57 @@ export default function DeviceDetail() {
         <DeviceMap markers={markers} />
       </Card>
 
+      <SectionTitle style={{ marginTop: space.sm }}>Device settings</SectionTitle>
+      <Card>
+        {editingName ? (
+          <>
+            <TextField
+              label="Device name"
+              value={nameDraft}
+              onChangeText={setNameDraft}
+              autoFocus
+            />
+            <View style={{ flexDirection: 'row', gap: space.sm }}>
+              <Button
+                style={{ flex: 1 }}
+                compact
+                title="Save name"
+                onPress={onSaveName}
+                disabled={busy}
+              />
+              <Button
+                style={{ flex: 1 }}
+                compact
+                tone="secondary"
+                title="Cancel"
+                onPress={() => setEditingName(false)}
+                disabled={busy}
+              />
+            </View>
+          </>
+        ) : (
+          <Button
+            tone="secondary"
+            title="✎  Rename device"
+            onPress={() => {
+              setNameDraft(device.deviceName ?? '');
+              setEditingName(true);
+            }}
+            disabled={busy}
+          />
+        )}
+        <Button
+          tone="dangerGhost"
+          title="Remove device"
+          onPress={confirmRemove}
+          disabled={busy}
+        />
+        <Text style={{ color: palette.textFaint, fontSize: 12 }}>
+          Removing deletes this device’s location history from your account. The phone itself
+          keeps working.
+        </Text>
+      </Card>
+
       <SectionTitle style={{ marginTop: space.sm }}>History ({history.length})</SectionTitle>
     </View>
   );
@@ -468,60 +519,6 @@ export default function DeviceDetail() {
             ) : null}
           </View>
         )}
-        ListFooterComponent={
-          <View style={{ padding: space.lg, gap: space.md }}>
-            <SectionTitle>Device settings</SectionTitle>
-            <Card>
-              {editingName ? (
-                <>
-                  <TextField
-                    label="Device name"
-                    value={nameDraft}
-                    onChangeText={setNameDraft}
-                    autoFocus
-                  />
-                  <View style={{ flexDirection: 'row', gap: space.sm }}>
-                    <Button
-                      style={{ flex: 1 }}
-                      compact
-                      title="Save name"
-                      onPress={onSaveName}
-                      disabled={busy}
-                    />
-                    <Button
-                      style={{ flex: 1 }}
-                      compact
-                      tone="secondary"
-                      title="Cancel"
-                      onPress={() => setEditingName(false)}
-                      disabled={busy}
-                    />
-                  </View>
-                </>
-              ) : (
-                <Button
-                  tone="secondary"
-                  title="✎  Rename device"
-                  onPress={() => {
-                    setNameDraft(device.deviceName ?? '');
-                    setEditingName(true);
-                  }}
-                  disabled={busy}
-                />
-              )}
-              <Button
-                tone="dangerGhost"
-                title="Remove device"
-                onPress={confirmRemove}
-                disabled={busy}
-              />
-              <Text style={{ color: palette.textFaint, fontSize: 12 }}>
-                Removing deletes this device’s location history from your account. The phone itself
-                keeps working.
-              </Text>
-            </Card>
-          </View>
-        }
       />
       </Screen>
     </>

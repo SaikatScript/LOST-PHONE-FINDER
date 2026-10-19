@@ -37,9 +37,10 @@ everything needed to continue. No secrets are stored in this repo, ever.
 
 3. NOT DONE (in order)
 --------------------------------------------------------------------------------
-  a. Phase 5A BUILT (19 Oct, awaiting on-phone check): dark-first UI redesign +
-     Settings + Forgot password + verification + Rename/Remove device. JS-only
-     (no new APK needed) - reload the app from Metro to see it.
+  a. Phase 5A BUILT + VERIFIED on the Samsung (19 Oct, screenshots taken).
+     Dark-first UI redesign + Settings + Forgot password + verification +
+     Rename/Remove device. JS-only (no new APK needed). Still to do: a quick
+     look on the OPPO (same account flow, manual taps).
   b. Phase 5B: anti-uninstall device admin, boot receiver, foreground-service
      persistence + OEM battery whitelist.
   c. Phase 5C: FCM push + Cloud Functions (needs Blaze) + Ring/Lock/Wipe.
@@ -75,6 +76,14 @@ everything needed to continue. No secrets are stored in this repo, ever.
 - expo-sms = composer only (user taps send). Same-operator SIM swap invisible.
 - Metro serves JS to dev builds: JS-only fixes need only app reload (--clear
   if stale). `.easignore` allows `.env` to EAS but blocks `*.apk`, adb-tools.
+- Adding NEW route files to src/app/ (e.g. settings.js) can leave Metro's
+  route list stale on Windows (file-watcher missed the new files): the route
+  exists on disk but router.push does nothing in the app. Symptom seen 19 Oct
+  (gear -> /settings dead, card -> /device/[id] fine). Fix: kill Metro and
+  `npx expo start --clear`, then reload the app.
+- Bundle sanity check needs the Expo URL params — a plain
+  /index.bundle?platform=android fetch compiles WITHOUT routerRoot and lacks
+  all route files, so string checks on it are misleading. Trust the app UI.
 
 6. RADIO TEST (PROVEN 19 Oct 2026 — reproduce in 4 taps)
 --------------------------------------------------------------------------------

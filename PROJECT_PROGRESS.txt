@@ -264,11 +264,31 @@ lost if the process dies before it syncs. During testing, verify writes with
 the local queue AND the REST API, not just the app's own (cache-fed) UI.
 
 --------------------------------------------------------------------------------
-PHASE 5A - UI REDESIGN & ACCOUNT POLISH (built 19 Oct, awaiting phone check)
+PHASE 5A - UI REDESIGN & ACCOUNT POLISH (built 19 Oct, Samsung check done)
 --------------------------------------------------------------------------------
 Master plan for the remaining phases: see PHASE5_BLUEPRINT.txt (Sprints 1-4).
 No MUSE SPARK design asset was available, so the dark-first design system was
 designed in-repo; swap tokens in src/theme.js if a reference design arrives.
+
+VERIFIED on the Samsung 19 Oct 21:00-21:35 (screenshots taken of each):
+- Devices screen dark + light: gear, verification banner + Resend link, device
+  card with OK chip / battery / "just now".
+- Settings opens from the gear; Dark/Light toggle flips the WHOLE app live
+  (both screenshots captured); Privacy Policy + Terms render; version + Log out.
+- Dashboard: fresh/stale chip ("may be old" + "This fix is 3 min old" hint),
+  source chip (network fallback / mesh), Send location now, tracking state,
+  SIM card, emergency card, map card with live satellite tiles, history rows
+  with mesh/network chips, "DEVICE SETTINGS" card (after moving it up from the
+  list footer to just above History - it was unreachable below 50 rows).
+- Rename editor opens inline (keyboard autoFocus), Cancel leaves the name
+  intact (server-side isLost=false / name unchanged confirmed via REST).
+- Fleet map + Offline mesh render in dark theme; mesh queue "0 packet(s)".
+- Deep links work: lostphonefinder://forgot-password, ://privacy, ://devices.
+- Zero JS errors in logcat across the whole session.
+Lesson (real bug): adding NEW route files while Metro was already running left
+the route list stale - the gear pushed /settings but nothing happened. Fixed by
+killing Metro and `npx expo start --clear`, then reloading the app. Windows
+file-watcher misses new files; restart Metro after adding routes.
 
 Built (no new native modules - JS only, so the existing dev build only needs a
 Metro reload, NO new APK):

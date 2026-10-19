@@ -100,6 +100,9 @@ UI & ACCOUNT (Phase 5A)
     Privacy Policy + Terms of Service (in-app template), app version, log out.
 35. Rename device (inline; does not touch lastUpdate) and Remove device
     (deletes the locations subcollection + device doc; keeps mesh key backup).
+    VERIFIED on the Samsung 19 Oct 2026 (dark + light themes, Settings gear,
+    theme toggle, rename editor, forgot-password + privacy deep links, fleet
+    map, mesh screen; zero JS errors). OPPO check pending.
 
 NOT YET BUILT
 --------------------------------------------------------------------------------
