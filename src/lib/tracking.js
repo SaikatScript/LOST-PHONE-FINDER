@@ -3,10 +3,9 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import * as Battery from 'expo-battery';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { waitForPendingWrites } from 'firebase/firestore';
-import { db } from './firebase';
 import { pushLocation } from './locations';
 import { beaconOfflineFix, noteOnlinePush } from './meshAuto';
+import { confirmedUpload } from './uploadAck';
 
 // Blueprint §5.3: background task every ~10 min writes to Firestore.
 // Task must be defined in global scope (TaskManager requirement).
@@ -43,21 +42,9 @@ let lastRoughPushAt = 0;
 // Firestore resolves writes made while OFFLINE locally (latency compensation),
 // so a resolved pushLocation does NOT prove the server got the fix — with the
 // default memory cache the write is simply lost if the app dies before sync.
-// waitForPendingWrites() waits for the real backend acknowledgement; racing it
-// with a timeout is the honest "did this fix upload?" signal that drives the
-// Phase 5B offline broadcast.
-const UPLOAD_ACK_MS = 10000;
-async function confirmedUpload(timeoutMs = UPLOAD_ACK_MS) {
-  try {
-    const res = await Promise.race([
-      waitForPendingWrites(db).then(() => 'ok').catch(() => 'fail'),
-      new Promise((resolve) => setTimeout(() => resolve('timeout'), timeoutMs)),
-    ]);
-    return res === 'ok';
-  } catch {
-    return false;
-  }
-}
+// confirmedUpload() (uploadAck.js) waits for the real backend acknowledgement;
+// that is the honest "did this fix upload?" signal that drives the Phase 5B
+// offline broadcast.
 
 async function pushTrackedBatch(tracked, locations) {
   const battery = await readBatteryPercent();

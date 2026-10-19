@@ -3,8 +3,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { encodeBase64 } from 'tweetnacl-util';
 import { ensureDeviceKeys, sealLocationPacket } from './meshCrypto';
 import { enqueuePacket, listPackets, removePacket } from './meshQueue';
-import { uploadRelay, harvestRelays, flushQueueAsGateway } from './meshRelay';
+import { uploadRelay, harvestRelays } from './meshRelay';
 import { helperScanOnce, startBeacon, stopBeacon, isBleAvailable } from './meshBle';
+import { confirmedUpload } from './uploadAck';
 
 // Phase 5B automation: every mesh step that used to be a button now runs by
 // itself, on every phone (same app = same behavior):
@@ -32,6 +33,10 @@ let scanBusy = false;
 let lastHarvestAt = 0;
 let lastScanAt = 0;
 let beaconOn = false;
+// Packets handed to Firestore this session but NOT yet acknowledged by the
+// server. addDoc() resolves locally while offline, so a packet may only be
+// removed from the SQLite queue after confirmedUpload() sees the real ack.
+const attemptedIds = new Set();
 
 let status = {
   active: false,
@@ -134,6 +139,7 @@ async function stopBeaconInternal(reason) {
 // queued and broadcast so any nearby Lost Phone Finder phone can carry it.
 export async function beaconOfflineFix({ userId, deviceId, lat, lng, accuracy = null, battery = null }) {
   if (!userId || !deviceId) return false;
+  setStatus({ online: false });
   try {
     if (!(await bleGrantsOk())) {
       setStatus({
@@ -164,6 +170,7 @@ export async function beaconOfflineFix({ userId, deviceId, lat, lng, accuracy = 
 
 // Tracking calls this when a direct upload succeeds again.
 export async function noteOnlinePush() {
+  setStatus({ online: true });
   if (beaconOn) await stopBeaconInternal('internet back — sent directly, broadcast stopped');
   if (uid) tick().catch(() => {});
 }
@@ -182,58 +189,57 @@ async function tick() {
     }
 
     let sent = 0;
-    let anyOk = false;
+    let acked = null;
     let anyFail = false;
 
-    // 1) Helper backlog: upload packets sealed by OTHER phones.
-    const foreign = queued.filter((p) => p.ownerId !== uid);
-    if (foreign.length) {
-      try {
-        const n = await flushQueueAsGateway(uid, foreign);
-        sent += n;
-        if (n > 0) anyOk = true;
-        else anyFail = true;
-      } catch {
-        anyFail = true;
-      }
-    }
-
-    // 2) My own fixes sealed while offline: straight to relays.
-    const mine = queued.filter((p) => p.ownerId === uid);
-    let mineSent = 0;
-    for (const p of mine) {
+    // 1) Hand every queued packet (helper backlog + my own offline fixes) to
+    // Firestore at most once per session. The write resolves locally even when
+    // offline — nothing is deleted from the queue until step 2 sees the ack.
+    for (const p of queued) {
+      if (attemptedIds.has(p.packetId)) continue;
       try {
         await uploadRelay(p);
-        await removePacket(p.packetId);
-        mineSent += 1;
-        anyOk = true;
+        attemptedIds.add(p.packetId);
       } catch {
         anyFail = true;
-        break; // still offline — keep the rest queued
       }
     }
-    sent += mineSent;
+
+    // 2) Real upload check: waitForPendingWrites() only resolves once the
+    // SERVER has acknowledged every queued write. A timeout means the packets
+    // are only sitting in the local cache — keep them queued (the offline
+    // broadcast keeps running) and retry on a later tick.
+    if (attemptedIds.size) {
+      acked = await confirmedUpload();
+      if (acked) {
+        for (const id of attemptedIds) {
+          try {
+            await removePacket(id);
+          } catch {}
+        }
+        sent = attemptedIds.size;
+        attemptedIds.clear();
+        console.log('[mesh-auto] upload acknowledged — cleared', sent, 'packet(s)');
+      } else {
+        console.log('[mesh-auto] upload not acknowledged (offline) —', attemptedIds.size, 'packet(s) kept queued');
+      }
+    }
 
     // 3) Harvest: fold my relays (own uploads + packets helpers carried for me)
-    // into device history. Runs periodically and right after any upload.
+    // into device history. Runs periodically and right after an acknowledged
+    // upload. NOTE: getDocs() also resolves while offline (from the local
+    // cache), so a "successful" harvest is NOT proof of internet.
     let harvestText = status.lastHarvestText;
-    if (Date.now() - lastHarvestAt >= HARVEST_EVERY_MS || mineSent > 0) {
+    if (Date.now() - lastHarvestAt >= HARVEST_EVERY_MS || (acked === true && sent > 0)) {
       try {
         const res = await harvestRelays(uid);
         lastHarvestAt = Date.now();
-        anyOk = true;
         harvestText = `checked ${res.checked}, decrypted ${res.opened}${res.blank ? `, ${res.blank} ping` : ''}`;
       } catch {
-        anyFail = true;
+        // offline: nothing to read yet — retry on the next tick
       }
     }
 
-    // Everything of mine is uploaded again → the broadcast is no longer needed.
-    if (beaconOn && mine.length - mineSent === 0 && anyOk) {
-      await stopBeaconInternal('internet back — broadcast stopped');
-    }
-
-    if (mineSent > 0) console.log('[mesh-auto] uploaded own offline fixes:', mineSent);
     if (harvestText !== status.lastHarvestText) {
       console.log('[mesh-auto] harvest:', harvestText);
     }
@@ -244,8 +250,13 @@ async function tick() {
     } catch {}
     const stillMine = after.filter((p) => p.ownerId === uid).length;
 
+    // Everything of mine is on the server → the broadcast is no longer needed.
+    if (beaconOn && acked === true && stillMine === 0) {
+      await stopBeaconInternal('internet back — broadcast stopped');
+    }
+
     setStatus({
-      online: anyOk ? true : anyFail ? false : status.online,
+      online: acked === true ? true : acked === false || anyFail ? false : status.online,
       queuedTotal: after.length,
       queuedOwn: stillMine,
       lastTickAt: Date.now(),
@@ -268,24 +279,19 @@ async function runScanCycle(force = false) {
   scanBusy = true;
   lastScanAt = Date.now();
   setStatus({ scanning: true, lastScanError: '' });
-  let uploaded = 0;
   try {
     const res = await helperScanOnce(async (packet) => {
+      // Keep it in the queue: the next tick uploads it and only drops it once
+      // the server acknowledges the write (offline scans stay queued safely).
       try {
         await enqueuePacket(packet);
-        await uploadRelay(packet);
-        await removePacket(packet.packetId);
-        uploaded += 1;
-      } catch {
-        // Offline: stays in the queue; the next tick uploads it.
-      }
+      } catch {}
     }, SCAN_WINDOW_MS);
     setStatus({
       scanning: false,
       lastScanAt: Date.now(),
       lastScanSeen: res.stats.seen,
       lastScanRead: res.stats.read,
-      relayedUp: status.relayedUp + uploaded,
     });
   } catch (e) {
     // "Scan already running" just means a manual scan is up — retry next time.

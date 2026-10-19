@@ -12,7 +12,6 @@ import {
 import { db } from './firebase';
 import { openLocationPacket } from './meshCrypto';
 import { pushLocation } from './locations';
-import { removePacket } from './meshQueue';
 
 // Phase 4a gateway: a helper WITH internet uploads queued packets (opaque to
 // the helper) to relays/; the owner's app harvests its own relays, decrypts,
@@ -34,19 +33,22 @@ export async function uploadRelay(packet) {
 }
 
 // Upload every queued packet not owned by me (my own go direct via tracking).
+// Does NOT delete from the SQLite queue: addDoc() resolves locally while
+// offline, so a packet may only be dropped once the server has ACKNOWLEDGED
+// the write (uploadAck.js). The caller checks the ack and removes the packets.
+// Returns the packetIds handed to Firestore.
 export async function flushQueueAsGateway(myUid, queued) {
-  let sent = 0;
+  const attempted = [];
   for (const p of queued) {
     if (p.ownerId === myUid) continue;
     try {
       await uploadRelay(p);
-      await removePacket(p.packetId);
-      sent += 1;
+      attempted.push(p.packetId);
     } catch {
-      // keep for next flush (offline / transient)
+      // keep for next flush (transient failure)
     }
   }
-  return sent;
+  return attempted;
 }
 
 // Owner harvest: decrypt my relays into device locations, then delete them.
