@@ -194,6 +194,39 @@ Permissions granted on the OPPO (ColorOS blocks "pm grant", so via the app's own
 dialogs): POST_NOTIFICATIONS, READ_PHONE_STATE.
 
 --------------------------------------------------------------------------------
+19 Oct 2026, afternoon - ZERO-INTERNET BEACON PROOF + LOCATION/UX FIXES
+--------------------------------------------------------------------------------
+Offline run 1 (11:51) FAILED on the Samsung: tapping "Start BLE beacon" with
+Wi-Fi off died with "Beacon failed - Secure random unavailable". Root cause:
+mesh crypto lazily loaded expo-crypto via dynamic import(); in a dev build that
+is fetched from Metro at first use, so an offline phone could not seal AT ALL —
+exactly when the feature matters. Fixed with a static require (Metro inlines it
+into the main bundle; old binaries still get the clear error). Removed the
+second dynamic import in the same file (firebase getDoc).
+Offline run 2 (12:20-12:24) PROVED the zero-internet path on the Samsung:
+  - 12:20:00 svc wifi disable; ping 8.8.8.8 = "Network is unreachable";
+  - 12:20:11 beacon tapped, sealed with NO network and advertised the whole
+    window: UI dumps at +60 s AND just before Wi-Fi returned both read
+    "Beacon: advertising"; BtGatt registerServer at 12:20:23 while offline;
+    dumpsys shows only OUR app advertising (run 1's 16.8 s "advertise" was a
+    system process — a red herring);
+  - 12:24:36 Wi-Fi restored. Harvest right after: "checked 0" — the OPPO's
+    scan read did not land a relay this time (run 3 pending to close the loop).
+Location mystery on the Samsung: Google Maps could not locate either. Airplane
+mode had been ON since boot + no SIM + indoors = ZERO fixes for 5.5 h (network
+location dead, GPS no sky view). Turning airplane mode off restored network
+fixes (±500 m); Maps works. Diagnose with `settings get global airplane_mode_on`.
+UX fixes shipped after that (commits 90a4d90, b954f85, all lint-clean):
+  1. Device screen auto-refreshes: opening it (or returning to the app) quietly
+     pushes a fresh fix when the newest one is older than 2 min — no more stale
+     "wrong" position until the 10-min task fires (verified live).
+  2. Tracking task throttles rough fixes: indoors the fused provider re-emits
+     the same ±500 m network fix every ~5 s and every single one was PUSHED
+     (history hit its 50 cap in minutes, ~700 writes/h). Now: ≤100 m fixes flow
+     (subject to expo's 25 m/10 min filter), rough ones at most 1 per 5 min,
+     source labelled "network fallback". Verified: zero pushes for 2 min.
+
+--------------------------------------------------------------------------------
 PENDING
 --------------------------------------------------------------------------------
 - Phase 5: battery profiling, UX polish, multi-OEM testing, security audit,

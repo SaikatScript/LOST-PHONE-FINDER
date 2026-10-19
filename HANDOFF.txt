@@ -89,6 +89,28 @@ everything needed to continue. No secrets are stored in this repo, ever.
   `adb mdns services` to get the `_adb-tls-pairing` port, `adb pair <ip:port>
   <code>` with the 6-digit code, then `adb connect <ip:connect-port>`.
 
+7. DEV-BUILD / DEVICE TRAPS FOUND THE HARD WAY (19 Oct 2026 PM)
+--------------------------------------------------------------------------------
+- NEVER dynamic import() anything on an offline-critical path. In dev builds
+  import() fetches the module from Metro at first use; with Wi-Fi off it fails
+  after ~15 s with a network error (that is the "Secure random unavailable" when
+  sealing the beacon). Use static require()/import — the module then lives in
+  the main bundle and works with zero internet. Production bundles inline it
+  anyway, so this bug class ONLY shows up in dev builds — test offline paths in
+  dev mode deliberately.
+- Samsung "location broken" for hours: check `settings get global
+  airplane_mode_on` FIRST. Airplane on + no SIM + indoors = zero fixes, and
+  Google Maps fails identically (so it is not the app).
+- Indoors the fused provider re-emits the same ±500 m network fix every ~5 s;
+  anything that pushes on every update must throttle (see tracking.js
+  ROUGH_FIX_GAP_MS) or it floods Firestore history/quota.
+- The device screen auto-refreshes stale fixes on open/foreground; keep the
+  manual "Send location now" as the forced path.
+- adb-over-Wi-Fi dies whenever the phone's Wi-Fi cycles (svc wifi disable in the
+  offline test): toggle Wireless debugging OFF/ON afterwards, then
+  `adb mdns services` -> `adb connect <connect-port>`; a pairing code is only
+  needed if the _adb-tls-pairing service appears.
+
 ================================================================================
 END OF HANDOFF
 ================================================================================
