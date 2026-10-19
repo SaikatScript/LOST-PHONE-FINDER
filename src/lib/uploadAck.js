@@ -1,4 +1,4 @@
-import { waitForPendingWrites } from 'firebase/firestore';
+import { waitForPendingWrites, disableNetwork, enableNetwork } from 'firebase/firestore';
 import { db } from './firebase';
 
 // Firestore resolves writes made while OFFLINE locally (latency compensation),
@@ -17,6 +17,20 @@ export async function confirmedUpload(timeoutMs = UPLOAD_ACK_MS) {
       new Promise((resolve) => setTimeout(() => resolve('timeout'), timeoutMs)),
     ]);
     return res === 'ok';
+  } catch {
+    return false;
+  }
+}
+
+// QA helper (mesh screen → Advanced tools): makes the Firestore SDK behave as
+// if the phone had lost internet — writes queue locally, reads hit the cache,
+// waitForPendingWrites never resolves — while the radios and adb stay up. This
+// exercises the exact production offline chain (seal → queue → broadcast →
+// auto upload + harvest) without unplugging the real network.
+export async function setFirestoreOffline(off) {
+  try {
+    await (off ? disableNetwork(db) : enableNetwork(db));
+    return true;
   } catch {
     return false;
   }

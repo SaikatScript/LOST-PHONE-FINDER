@@ -20,6 +20,7 @@ import {
   manualBeacon,
   manualBeaconStop,
 } from '../lib/meshAuto';
+import { setFirestoreOffline } from '../lib/uploadAck';
 import { Screen, Card, Chip, Button, SectionTitle, StatusDot, EmptyState } from '../components/ui';
 import { space } from '../theme';
 
@@ -52,6 +53,7 @@ export default function Mesh() {
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [simOffline, setSimOffline] = useState(false);
   const [agent, setAgent] = useState(null);
 
   useEffect(() => subscribeMeshStatus(setAgent), []);
@@ -134,6 +136,29 @@ export default function Mesh() {
       setInfo('Updated: queue flushed, uploads and harvest done.');
     } catch (e) {
       setInfo(`Update failed: ${e.message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Simulated outage: drives the exact offline chain (seal → queue → broadcast
+  // → automatic upload + harvest) without touching Wi-Fi or mobile data.
+  const onToggleSimOffline = async () => {
+    const next = !simOffline;
+    setBusy(true);
+    try {
+      const ok = await setFirestoreOffline(next);
+      if (!ok) {
+        setInfo('Could not switch the simulated network state.');
+        return;
+      }
+      setSimOffline(next);
+      setInfo(
+        next
+          ? 'Simulated outage ON. The next location push queues locally and starts the Bluetooth broadcast.'
+          : 'Simulated outage OFF. The agent uploads queued fixes and harvests automatically within a minute.'
+      );
+      if (!next) await runMeshNow();
     } finally {
       setBusy(false);
     }
@@ -339,6 +364,7 @@ export default function Mesh() {
           {st.beaconOn ? <Chip tone="warn" dot label="broadcasting" /> : null}
           {st.scanning ? <Chip tone="info" dot label="scanning" /> : null}
           {st.online === true ? <Chip tone="ok" dot label="internet ok" /> : null}
+          {simOffline ? <Chip tone="warn" dot label="offline simulated" /> : null}
         </View>
       </Card>
 
@@ -473,6 +499,13 @@ export default function Mesh() {
               tone={agent?.beaconOn ? 'dangerGhost' : 'secondary'}
               title={agent?.beaconOn ? 'Stop manual broadcast' : 'Start manual broadcast (test)'}
               onPress={onToggleBeacon}
+              disabled={busy}
+            />
+            <Button
+              compact
+              tone={simOffline ? 'dangerGhost' : 'secondary'}
+              title={simOffline ? 'Back online (stop simulating)' : 'Simulate no internet (test the auto flow)'}
+              onPress={onToggleSimOffline}
               disabled={busy}
             />
             <Text style={{ color: palette.textFaint, fontSize: 12 }}>
