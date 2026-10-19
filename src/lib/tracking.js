@@ -75,19 +75,48 @@ export async function ensureTrackingPermissions() {
   return true;
 }
 
-export async function pushCurrentLocationNow(userId, deviceId, source = 'gps') {
-  // High = real GPS. Balanced (the old value) resolves from Wi-Fi/cell towers,
-  // which is why fixes could be 600 m off — useless for finding a phone.
-  const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+// One-shot fix used by "Send location now". Never hang and never greet the
+// owner with an error while a usable fix exists: 1) true GPS (High), 2) the
+// network fix (Wi-Fi/cell), 3) whatever was cached last. Each step is capped
+// and the source label says honestly where the fix came from.
+const FIX_TIMEOUT_MS = 20000;
+const NET_TIMEOUT_MS = 15000;
+
+function withTimeout(promise, ms) {
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(null), ms));
+  return Promise.race([promise.then((v) => v ?? null).catch(() => null), timeout]);
+}
+
+async function getBestAvailablePosition() {
+  const gps = await withTimeout(
+    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+    FIX_TIMEOUT_MS
+  );
+  if (gps) return { pos: gps, source: 'gps' };
+  const net = await withTimeout(
+    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+    NET_TIMEOUT_MS
+  );
+  if (net) return { pos: net, source: 'network fallback' };
+  const last = await Location.getLastKnownPositionAsync().catch(() => null);
+  if (last) return { pos: last, source: 'last known' };
+  return null;
+}
+
+export async function pushCurrentLocationNow(userId, deviceId) {
+  const best = await getBestAvailablePosition();
+  if (!best) {
+    throw new Error('No location available — move near a window or outdoors, then retry.');
+  }
   const battery = await readBatteryPercent();
   await pushLocation(userId, deviceId, {
-    lat: pos.coords.latitude,
-    lng: pos.coords.longitude,
-    accuracy: pos.coords.accuracy ?? null,
+    lat: best.pos.coords.latitude,
+    lng: best.pos.coords.longitude,
+    accuracy: best.pos.coords.accuracy ?? null,
     battery,
-    source,
+    source: best.source,
   });
-  return { lat: pos.coords.latitude, lng: pos.coords.longitude, battery };
+  return { lat: best.pos.coords.latitude, lng: best.pos.coords.longitude, battery };
 }
 
 export async function startTracking(userId, deviceId) {

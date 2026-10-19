@@ -1,7 +1,7 @@
 import nacl from 'tweetnacl';
 import { encodeBase64, decodeBase64, encodeUTF8, decodeUTF8 } from 'tweetnacl-util';
 import * as SecureStore from 'expo-secure-store';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
 // Phase 4a: sealed mesh packets (NaCl public-key box, pure JS).
@@ -20,12 +20,15 @@ const privKeyName = (deviceId) => `mesh.priv.${deviceId}`;
 // (documented getRandomBytesAsync). tweetnacl's internal PRNG needs
 // crypto.getRandomValues, missing in Hermes — so we never let nacl generate:
 // secrets/nonces are made here and injected via fromSecretKey/explicit nonce.
-// Dynamic import: old binaries lacking the native module fail with a clear
-// error instead of red-screening at load.
+// STATIC require on purpose: Metro inlines it into the main bundle, so sealing
+// works with zero internet. An async import() is fetched from the dev server
+// at first use and fails on an offline phone ("Secure random unavailable") —
+// exactly the stolen-phone case this beacon exists for. Old binaries without
+// the native module still get a clear error instead of a red screen.
 async function randBytes(n) {
   let Crypto;
   try {
-    Crypto = await import('expo-crypto');
+    Crypto = require('expo-crypto');
   } catch {
     throw new Error('Secure random unavailable — install the latest dev build.');
   }
@@ -59,10 +62,9 @@ export async function ensureDeviceKeys(userId, deviceId) {
 async function loadSecretKey(userId, deviceId) {
   const privB64 =
     (await SecureStore.getItemAsync(privKeyName(deviceId))) ??
-    (await import('firebase/firestore').then(async ({ getDoc }) => {
-      const snap = await getDoc(doc(db, 'deviceKeys', deviceId));
-      return snap.exists() && snap.data().userId === userId ? snap.data().privKey : null;
-    }));
+    (await getDoc(doc(db, 'deviceKeys', deviceId)).then((snap) =>
+      snap.exists() && snap.data().userId === userId ? snap.data().privKey : null
+    ));
   if (!privB64) throw new Error('No mesh key for this device.');
   return decodeBase64(privB64);
 }

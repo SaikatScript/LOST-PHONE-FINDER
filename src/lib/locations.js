@@ -32,18 +32,17 @@ export async function pushLocation(userId, deviceId, { lat, lng, accuracy, batte
   // Rollup for list/map markers (blueprint §4: lastLocation, lastBattery, lastUpdate).
   // Accuracy + a client clock reading also ride along, so the map can say how
   // precise the fix is and how old it is without reading the whole subcollection.
-  await setDoc(
-    doc(db, 'users', userId, 'devices', deviceId),
-    {
-      lastLocation: { latitude: lat, longitude: lng },
-      lastBattery: battery ?? null,
-      lastAccuracy: accuracy ?? null,
-      lastLocationAt: Date.now(),
-      lastLocationSource: source,
-      lastUpdate: serverTimestamp(),
-    },
-    { merge: true }
-  );
+  // Battery is only overwritten when actually read — a failed read must not
+  // wipe the last known value to null (the UI shows "Battery ?%" then).
+  const rollup = {
+    lastLocation: { latitude: lat, longitude: lng },
+    lastAccuracy: accuracy ?? null,
+    lastLocationAt: Date.now(),
+    lastLocationSource: source,
+    lastUpdate: serverTimestamp(),
+  };
+  if (battery != null) rollup.lastBattery = battery;
+  await setDoc(doc(db, 'users', userId, 'devices', deviceId), rollup, { merge: true });
 }
 
 export function subscribeToLocations(userId, deviceId, count, onData, onError) {

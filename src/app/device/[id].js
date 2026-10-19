@@ -22,10 +22,9 @@ export default function DeviceDetail() {
   const [error, setError] = useState('');
   // Clock for "this fix is N minutes old". Kept in state (updated by an effect)
   // so the render body never calls Date.now() directly.
-  const [now, setNow] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), 60 * 1000);
     return () => clearInterval(t);
   }, []);
