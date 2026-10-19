@@ -227,6 +227,29 @@ UX fixes shipped after that (commits 90a4d90, b954f85, all lint-clean):
      source labelled "network fallback". Verified: zero pushes for 2 min.
 
 --------------------------------------------------------------------------------
+19 Oct 2026, evening - REVERSE-DIRECTION OFFLINE PROOF (OPPO beacon, Samsung relay)
+--------------------------------------------------------------------------------
+User ran the pair the other way round: the OPPO went OFFLINE as the "stolen"
+phone and the Samsung was the online helper. Evidence (Samsung logcat):
+  - 17:03:58 OPPO sealed its packet (DgjzjBuZ7wMgknJA3MWX-1792409638427) offline;
+  - 17:04:35-17:05:09 "[mesh] read ok, b64 592 bytes 442" reads of the beacon;
+  - 17:05:00 "[mesh] relaying packet 1 Dgjzj...-1792409638427-..." (upload);
+  - scan summary on screen: "Scan: heard 5, connected 4, read 4."
+A harvest on the SAMSUNG showed "checked 0" - and that is CORRECT: helpers
+upload into the top-level relays collection with ownerId = the OWNER's uid (here
+the OPPO), and only the owner can read/decrypt its relays. The decrypt check
+must happen on the OPPO ("Harvest my relays" while online).
+Two real bugs found while confirming (commit 83fd9c9):
+  1. Scan-time uploads never removed the packet from the local sqlite queue, so
+     foreign read-packets accumulated (5 stuck entries).
+  2. flushQueueAsGateway existed but had NO caller - a helper that read a beacon
+     while offline NEVER relayed it. Now the scan removes packets after a
+     successful upload, and opening the mesh screen flushes queued foreign
+     packets when online ("heal the queue").
+Verified on the Samsung after the fix: Queue 5 -> 0 (all pending relays,
+today's included, are now in the cloud; the flush only removes on success).
+
+--------------------------------------------------------------------------------
 PENDING
 --------------------------------------------------------------------------------
 - Phase 5: battery profiling, UX polish, multi-OEM testing, security audit,

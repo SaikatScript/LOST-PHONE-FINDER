@@ -106,6 +106,10 @@ everything needed to continue. No secrets are stored in this repo, ever.
   ROUGH_FIX_GAP_MS) or it floods Firestore history/quota.
 - The device screen auto-refreshes stale fixes on open/foreground; keep the
   manual "Send location now" as the forced path.
+- Relay ownership: helpers upload to the top-level `relays` collection with
+  `ownerId` = the BROKEN phone's owner; only that owner can read/decrypt them.
+  A "Harvest my relays" on the HELPER's account showing "checked 0" for a
+  packet it just relayed is EXPECTED - harvest on the owner's account.
 - adb-over-Wi-Fi dies whenever the phone's Wi-Fi cycles (svc wifi disable in the
   offline test): toggle Wireless debugging OFF/ON afterwards, then
   `adb mdns services` -> `adb connect <connect-port>`; a pairing code is only

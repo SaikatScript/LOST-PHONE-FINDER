@@ -68,7 +68,11 @@ OFFLINE MESH (Phase 4a + 4b)
     the whole window; the beacon still sealed and advertised (UI + native BtGatt
     registerServer evidence). The first attempt failed on a dev-build-only trap:
     sealing lazily import()ed expo-crypto (fetched from Metro — impossible
-    offline); now a static require, so sealing never needs a network.
+    offline); now a static require, so sealing never needs a network. Reverse
+    direction also proven (19 Oct, ~17:05): the OPPO beaconed OFFLINE, the
+    Samsung read the packet 4x and relayed it at 17:05:00; the relay queue now
+    self-heals (successful uploads are removed from it, and visiting the mesh
+    screen flushes anything left from offline reads).
 29. Radio diagnostics: "Radio check" lists every nearby BLE device; scan result
     alerts report heard/connected/read counts plus a per-step trace; the beacon
     status line shows the real advertising state (or the failure code).
