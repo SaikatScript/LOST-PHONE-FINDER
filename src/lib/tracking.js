@@ -3,7 +3,10 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import * as Battery from 'expo-battery';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { waitForPendingWrites } from 'firebase/firestore';
+import { db } from './firebase';
 import { pushLocation } from './locations';
+import { beaconOfflineFix, noteOnlinePush } from './meshAuto';
 
 // Blueprint §5.3: background task every ~10 min writes to Firestore.
 // Task must be defined in global scope (TaskManager requirement).
@@ -37,8 +40,29 @@ async function readBatteryPercent() {
 const ROUGH_FIX_GAP_MS = 5 * 60 * 1000;
 let lastRoughPushAt = 0;
 
+// Firestore resolves writes made while OFFLINE locally (latency compensation),
+// so a resolved pushLocation does NOT prove the server got the fix — with the
+// default memory cache the write is simply lost if the app dies before sync.
+// waitForPendingWrites() waits for the real backend acknowledgement; racing it
+// with a timeout is the honest "did this fix upload?" signal that drives the
+// Phase 5B offline broadcast.
+const UPLOAD_ACK_MS = 10000;
+async function confirmedUpload(timeoutMs = UPLOAD_ACK_MS) {
+  try {
+    const res = await Promise.race([
+      waitForPendingWrites(db).then(() => 'ok').catch(() => 'fail'),
+      new Promise((resolve) => setTimeout(() => resolve('timeout'), timeoutMs)),
+    ]);
+    return res === 'ok';
+  } catch {
+    return false;
+  }
+}
+
 async function pushTrackedBatch(tracked, locations) {
   const battery = await readBatteryPercent();
+  let lastFailed = null;
+  let lastOk = false;
   for (const loc of locations) {
     const acc = loc.coords.accuracy ?? null;
     const rough = !(acc != null && acc <= 100);
@@ -52,9 +76,33 @@ async function pushTrackedBatch(tracked, locations) {
         source: rough ? 'network fallback' : 'gps',
       });
       if (rough) lastRoughPushAt = Date.now();
+      if (await confirmedUpload()) {
+        lastOk = true;
+        lastFailed = null;
+      } else {
+        // Locally queued but not acknowledged: treat as offline, seal + queue
+        // + broadcast below. If it syncs later it lands twice — harmless.
+        lastFailed = { lat: loc.coords.latitude, lng: loc.coords.longitude, acc };
+        break;
+      }
     } catch {
-      // Offline: drop (Phase 2). Local queue + retry comes with mesh work.
+      // Offline (Phase 5B): the fix is NOT lost — it is sealed, queued and
+      // broadcast over Bluetooth below; the agent uploads it automatically
+      // the moment internet returns.
+      lastFailed = { lat: loc.coords.latitude, lng: loc.coords.longitude, acc };
     }
+  }
+  if (lastFailed && !lastOk) {
+    await beaconOfflineFix({
+      userId: tracked.userId,
+      deviceId: tracked.deviceId,
+      lat: lastFailed.lat,
+      lng: lastFailed.lng,
+      accuracy: lastFailed.acc,
+      battery,
+    }).catch(() => {});
+  } else if (lastOk) {
+    noteOnlinePush().catch(() => {});
   }
 }
 
@@ -72,6 +120,14 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
     await checkSimChange(tracked.userId, tracked.deviceId, sendLocalAlert);
   } catch {
     // Cellular module missing (old binary) or transient failure: ignore.
+  }
+  // Phase 5B: piggyback the mesh agent on the same wake-up — upload queued
+  // packets, harvest relays, scan for nearby lost phones. Best-effort.
+  try {
+    const { backgroundAgentPass } = require('./meshAuto');
+    await backgroundAgentPass();
+  } catch {
+    // ignore — the foreground agent retries
   }
 });
 
@@ -126,13 +182,32 @@ export async function pushCurrentLocationNow(userId, deviceId) {
     throw new Error('No location available — move near a window or outdoors, then retry.');
   }
   const battery = await readBatteryPercent();
-  await pushLocation(userId, deviceId, {
-    lat: best.pos.coords.latitude,
-    lng: best.pos.coords.longitude,
-    accuracy: best.pos.coords.accuracy ?? null,
-    battery,
-    source: best.source,
-  });
+  try {
+    await pushLocation(userId, deviceId, {
+      lat: best.pos.coords.latitude,
+      lng: best.pos.coords.longitude,
+      accuracy: best.pos.coords.accuracy ?? null,
+      battery,
+      source: best.source,
+    });
+    // Firestore acks offline writes locally — require the real upload.
+    if (!(await confirmedUpload())) throw new Error('not acknowledged');
+  } catch {
+    // No internet: seal + queue + broadcast automatically (Phase 5B).
+    await beaconOfflineFix({
+      userId,
+      deviceId,
+      lat: best.pos.coords.latitude,
+      lng: best.pos.coords.longitude,
+      accuracy: best.pos.coords.accuracy ?? null,
+      battery,
+    }).catch(() => {});
+    throw new Error(
+      'No internet right now — the fix was saved and is broadcasting over Bluetooth. ' +
+        'It reaches your account automatically once any Lost Phone Finder phone has internet.'
+    );
+  }
+  noteOnlinePush().catch(() => {});
   return { lat: best.pos.coords.latitude, lng: best.pos.coords.longitude, battery };
 }
 
@@ -142,6 +217,14 @@ export async function startTracking(userId, deviceId) {
   }
   await ensureTrackingPermissions();
   await AsyncStorage.setItem(TRACKED_KEY, JSON.stringify({ userId, deviceId }));
+
+  // Phase 5B: ask for the Bluetooth grants NOW, while the owner is looking at
+  // the screen, so the automatic offline broadcast can start later without a
+  // permission dialog interrupting a stolen phone in a pocket.
+  try {
+    const { prewarmMeshPermissions } = require('./meshAuto');
+    await prewarmMeshPermissions();
+  } catch {}
 
   // Preferred: background-capable updates every 10 min / 50 m.
   try {

@@ -1,8 +1,23 @@
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { AuthProvider } from '../context/AuthContext';
+import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
+import { setMeshUser } from '../lib/meshAuto';
+
+// Phase 5B: the mesh agent follows the signed-in account. It starts the
+// automatic chain (flush → upload → harvest → helper scan → offline beacon)
+// as soon as the app is open and stops when nobody is signed in. It renders
+// nothing — status lives on the Offline mesh screen.
+function MeshAgent() {
+  const { user } = useAuth();
+  useEffect(() => {
+    setMeshUser(user?.uid ?? null);
+    return () => setMeshUser(null);
+  }, [user?.uid]);
+  return null;
+}
 
 function ThemedStack() {
   const { palette, mode } = useTheme();
@@ -41,6 +56,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ThemeProvider>
         <AuthProvider>
+          <MeshAgent />
           <ThemedStack />
         </AuthProvider>
       </ThemeProvider>

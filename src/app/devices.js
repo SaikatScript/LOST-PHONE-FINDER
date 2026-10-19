@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { subscribeToDevices } from '../lib/devices';
+import { subscribeMeshStatus } from '../lib/meshAuto';
 import { Screen, Card, Chip, Button, EmptyState } from '../components/ui';
 import { timeAgo } from '../lib/format';
 import { space } from '../theme';
@@ -13,6 +14,31 @@ export default function Devices() {
   const { palette } = useTheme();
   const [devices, setDevices] = useState([]);
   const [error, setError] = useState('');
+  const [mesh, setMesh] = useState(null);
+
+  // Live mesh/automation state: the strip under the title tells the owner what
+  // the phone is doing by itself (scanning, broadcasting, waiting to upload).
+  useEffect(() => subscribeMeshStatus(setMesh), []);
+
+  let meshTone = 'neutral';
+  let meshLabel = 'Offline mesh: starting…';
+  if (mesh) {
+    meshTone = 'ok';
+    meshLabel = 'Offline mesh: ready';
+    if (mesh.beaconOn) {
+      meshTone = 'warn';
+      meshLabel = 'Offline mesh: broadcasting (no internet)';
+    } else if ((mesh.queuedOwn ?? 0) > 0) {
+      meshTone = 'warn';
+      meshLabel = `Offline mesh: ${mesh.queuedOwn} fix waiting to upload`;
+    } else if (mesh.scanning) {
+      meshTone = 'info';
+      meshLabel = 'Offline mesh: checking nearby phones';
+    } else if (mesh.online === false) {
+      meshTone = 'warn';
+      meshLabel = 'Offline mesh: offline — fixes are saved';
+    }
+  }
 
   useEffect(() => {
     if (!user) {
@@ -85,6 +111,13 @@ export default function Devices() {
           </Pressable>
         </Card>
       )}
+
+      <Pressable
+        onPress={() => router.push('/mesh')}
+        style={{ paddingHorizontal: space.lg, paddingBottom: space.md }}
+      >
+        <Chip dot tone={meshTone} label={meshLabel} />
+      </Pressable>
 
       {error ? (
         <Text style={{ color: palette.danger, paddingHorizontal: space.lg }}>{error}</Text>

@@ -1,16 +1,29 @@
-import { useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable, FlatList, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, Pressable, FlatList, Alert, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { encodeBase64 } from 'tweetnacl-util';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { subscribeToDevices } from '../lib/devices';
 import { ensureDeviceKeys, sealLocationPacket } from '../lib/meshCrypto';
-import { enqueuePacket, listPackets, queueBackend, removePacket } from '../lib/meshQueue';
-import { uploadRelay, harvestRelays, flushQueueAsGateway } from '../lib/meshRelay';
-import { isBleAvailable, helperScanOnce, scanNearbyDevices, startBeacon, stopBeacon, addBeaconListener } from '../lib/meshBle';
+import { listPackets, queueBackend } from '../lib/meshQueue';
+import { uploadRelay, harvestRelays } from '../lib/meshRelay';
+import {
+  isBleAvailable,
+  helperScanOnce,
+  scanNearbyDevices,
+  addBeaconListener,
+} from '../lib/meshBle';
+import {
+  subscribeMeshStatus,
+  runMeshNow,
+  manualBeacon,
+  manualBeaconStop,
+} from '../lib/meshAuto';
+import { Screen, Card, Chip, Button, SectionTitle, StatusDot, EmptyState } from '../components/ui';
+import { space } from '../theme';
 
-// Android's AdvertiseCallback error codes → human text (Phase 4b beacon).
+// Android's AdvertiseCallback error codes → human text.
 const ADV_ERROR = {
   1: 'the advertising packet is too large for this phone',
   2: 'too many apps are already advertising',
@@ -19,21 +32,29 @@ const ADV_ERROR = {
   5: 'this phone does not support BLE advertising',
 };
 
+function sinceText(ms) {
+  if (!ms) return 'never';
+  const s = Math.round((Date.now() - ms) / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  return `${Math.round(m / 60)} h ago`;
+}
+
 export default function Mesh() {
   const { user } = useAuth();
   const { palette } = useTheme();
-  // Themed stylesheet (Phase 5A): derived from the active palette so this
-  // screen stays readable in dark mode too.
-  const styles = useMemo(() => createStyles(palette), [palette]);
   const [devices, setDevices] = useState([]);
   const [deviceId, setDeviceId] = useState(null);
   const [queue, setQueue] = useState([]);
   const [backend, setBackend] = useState('…');
   const [ble, setBle] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [beaconOn, setBeaconOn] = useState(false);
-  const [beaconStatus, setBeaconStatus] = useState('');
   const [info, setInfo] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [agent, setAgent] = useState(null);
+
+  useEffect(() => subscribeMeshStatus(setAgent), []);
 
   const refresh = async () => {
     setQueue(await listPackets().catch(() => []));
@@ -46,19 +67,8 @@ export default function Mesh() {
       router.replace('/login');
       return;
     }
-    // Initial hydration for this screen (queue/backend/BLE availability). The
-    // disable below covers the intended one-shot setState inside refresh().
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh().catch(() => {});
-    // Heal the queue: foreign packets may have been read while this phone was
-    // offline (their relay upload failed). Upload them now so the owner still
-    // gets them. Own sealed packets are skipped inside flushQueueAsGateway.
-    listPackets()
-      .then((queued) => flushQueueAsGateway(user.uid, queued))
-      .then((sent) => {
-        if (sent) refresh().catch(() => {});
-      })
-      .catch(() => {});
     return subscribeToDevices(
       user.uid,
       (ds) => {
@@ -70,11 +80,43 @@ export default function Mesh() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // Live beacon events from the native module (helper-connected / served).
+  useEffect(() => {
+    let sub;
+    try {
+      sub = addBeaconListener((evt) => {
+        const type = evt?.type;
+        if (!type) return;
+        if (type === 'error') {
+          const code = /code (\d+)/.exec(evt.message ?? '')?.[1];
+          const why = (code && ADV_ERROR[code]) || evt.message || 'unknown error';
+          setInfo(`Broadcast failed: ${why}`);
+        } else if (type === 'helper-connected') {
+          setInfo(`A nearby phone connected to carry this fix (${evt.device ?? '?'}).`);
+        } else if (type === 'packet-read') {
+          setInfo(`A nearby phone picked up this fix (${evt.device ?? '?'}). It will be uploaded to your account.`);
+        }
+      });
+    } catch {
+      // native beacon module absent on this build — nothing to listen to
+    }
+    return () => {
+      try {
+        sub?.remove?.();
+      } catch {}
+    };
+  }, []);
+
   const guard = () => {
     if (!user) {
       router.replace('/login');
       return false;
     }
+    return true;
+  };
+
+  const guardDevice = () => {
+    if (!guard()) return false;
     if (!deviceId) {
       Alert.alert('No device', 'Add a device first.');
       return false;
@@ -82,10 +124,23 @@ export default function Mesh() {
     return true;
   };
 
-  // Full cloud-path E2E test: seal current GPS → queue → upload → harvest →
-  // decrypt → location appears in device history. No BLE needed.
+  // --- Advanced / diagnostic actions (the daily flow is fully automatic) ----
+
+  const onUpdateNow = async () => {
+    setBusy(true);
+    try {
+      await runMeshNow();
+      await refresh();
+      setInfo('Updated: queue flushed, uploads and harvest done.');
+    } catch (e) {
+      setInfo(`Update failed: ${e.message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onTestRelay = async () => {
-    if (!guard()) return;
+    if (!guardDevice()) return;
     setBusy(true);
     try {
       const Location = require('expo-location');
@@ -100,19 +155,17 @@ export default function Mesh() {
         battery: null,
         ownerPubB64: encodeBase64(kp.publicKey),
       });
-      await enqueuePacket(packet);
       await uploadRelay(packet);
-      await removePacket(packet.packetId);
       const res = await harvestRelays(user.uid);
       await refresh();
       Alert.alert(
-        'Relay test',
-        `Sealed → queued → uploaded → harvested. Checked ${res.checked}, decrypted ${res.opened}` +
+        'Sealed packet test',
+        `Sealed → uploaded → decrypted. Checked ${res.checked}, decrypted ${res.opened}` +
           (res.blank ? `, ${res.blank} ping(s) with no position.` : '.') +
           ' See device history.'
       );
     } catch (e) {
-      Alert.alert('Relay test failed', e.message);
+      Alert.alert('Test failed', e.message);
     } finally {
       setBusy(false);
     }
@@ -125,7 +178,7 @@ export default function Mesh() {
       const res = await harvestRelays(user.uid);
       await refresh();
       setInfo(
-        `Harvested: checked ${res.checked}, decrypted ${res.opened}` +
+        `Checked ${res.checked} relay(s), decrypted ${res.opened}` +
           (res.blank ? `, ${res.blank} without a position (ping only).` : '.')
       );
     } catch (e) {
@@ -138,45 +191,30 @@ export default function Mesh() {
   const onScan = async () => {
     if (!guard()) return;
     setBusy(true);
-    setInfo('Scanning for stolen-phone beacons…');
+    setInfo('Scanning for nearby lost phones…');
     try {
       let found = 0;
-      const uploaded = new Set();
-      const { packets, stats, trace } = await helperScanOnce(async (packet) => {
+      const { stats, trace } = await helperScanOnce(async (packet) => {
         found += 1;
-        await enqueuePacket(packet);
-        // One upload per packet per scan: the radio may hand us the same beacon
-        // several times (address rotation), and each upload would add another
-        // identical relay document for the owner to decrypt.
-        if (!uploaded.has(packet.packetId)) {
-          uploaded.add(packet.packetId);
-          console.log('[mesh] relaying packet', found, packet.packetId);
-          try {
-            await uploadRelay(packet);
-            // Uploaded — drop it from the local queue. If the write failed
-            // (helper offline), the packet stays queued and the flush on the
-            // next mesh-screen visit uploads it instead.
-            await removePacket(packet.packetId);
-          } catch {}
+        try {
+          await uploadRelay(packet);
+        } catch {
+          // stays in the queue — the agent uploads it when internet returns
         }
-        await refresh();
       }, 25000);
-      // Report WHY nothing was found, not just that nothing was found.
       let verdict;
-      if (stats.read > 0) {
-        verdict = `${stats.read} packet(s) read and relayed.`;
-      } else if (stats.seen === 0) {
+      if (stats.read > 0) verdict = `${stats.read} packet(s) read and relayed.`;
+      else if (stats.seen === 0) {
         verdict =
-          'No mesh beacon heard. Either the other phone is not beaconing, or it is out of range. ' +
-          'Run "Radio check" on this phone to confirm its own Bluetooth scanning works.';
+          'No lost phone heard nearby. (Their app only broadcasts while it has no internet.)';
       } else if (stats.connected === 0) {
         verdict = `Heard ${stats.seen} beacon(s) but could not connect. First error: ${stats.errors[0] ?? 'unknown'}`;
       } else {
-        verdict = `Connected to ${stats.connected} beacon(s) but the packet read failed. First error: ${stats.errors[0] ?? 'unknown'}`;
+        verdict = `Connected to ${stats.connected} beacon(s) but the read failed. First error: ${stats.errors[0] ?? 'unknown'}`;
       }
       const traceText = trace?.length ? `\n\nSteps: ${trace.join(' → ')}` : '';
       setInfo(`Scan: heard ${stats.seen}, connected ${stats.connected}, read ${stats.read}.`);
-      Alert.alert('Helper scan', `${verdict}\n\n(packets handled: ${packets.length})${traceText}`);
+      Alert.alert('Manual scan', `${verdict}\n\n(packets handled: ${found})${traceText}`);
     } catch (e) {
       Alert.alert('Scan failed', e.message);
     } finally {
@@ -185,23 +223,18 @@ export default function Mesh() {
     }
   };
 
-  // Radio self-check: is THIS phone's BLE working at all? Lists every nearby
-  // BLE device with no filter, so an empty result points at permissions/radio
-  // or Location being off, while a non-empty result clears the phone.
   const onRadioCheck = async () => {
     if (!guard()) return;
     setBusy(true);
-    setInfo('Radio check: listing every nearby BLE device…');
     try {
       const list = await scanNearbyDevices(8000);
-      setInfo(`Radio check: ${list.length} BLE device(s) heard.`);
       Alert.alert(
         'Radio check',
         list.length
           ? `Bluetooth scanning works — heard ${list.length} device(s):\n\n` +
               list.slice(0, 8).join('\n') +
               (list.length > 8 ? `\n…+${list.length - 8} more` : '')
-          : 'Bluetooth scanning heard NOTHING nearby.\n\nCheck: Bluetooth ON, Location ON (required by Android for BLE scanning on Android 11), "Nearby devices" permission granted.'
+          : 'Bluetooth heard NOTHING nearby.\n\nCheck: Bluetooth ON, Location ON (Android requires it for BLE scanning), "Nearby devices" permission granted.'
       );
     } catch (e) {
       Alert.alert('Radio check failed', e.message);
@@ -210,59 +243,18 @@ export default function Mesh() {
     }
   };
 
-  // Live beacon status from the native module (Phase 4b). The Kotlin side emits
-  // started / error / helper-connected / packet-read events. Surfacing "error"
-  // here is what turns a silent advertising failure into a visible one.
-  useEffect(() => {
-    let sub;
-    try {
-      sub = addBeaconListener((evt) => {
-        const type = evt?.type;
-        if (!type) return;
-        if (type === 'error') {
-          const code = /code (\d+)/.exec(evt.message ?? '')?.[1];
-          const why = (code && ADV_ERROR[code]) || evt.message || 'unknown error';
-          setBeaconOn(false);
-          setBeaconStatus(`Beacon FAILED: ${why}`);
-          Alert.alert('Beacon failed', why);
-        } else if (type === 'started') {
-          setBeaconOn(true);
-          setBeaconStatus('Beacon: advertising ✓');
-        } else if (type === 'helper-connected') {
-          setBeaconStatus(`Beacon: helper connected (${evt.device ?? '?'})`);
-        } else if (type === 'packet-read') {
-          setBeaconStatus(`Beacon: packet served to helper (${evt.device ?? '?'})`);
-        }
-      });
-    } catch {
-      // native beacon module absent on this build — the toggle reports it
-    }
-    return () => {
-      try {
-        sub?.remove?.();
-      } catch {}
-    };
-  }, []);
-
-  // Stolen role: seal this phone's current fix and broadcast it over BLE for
-  // nearby helpers. Toggle off when done (beacon dies with the app anyway).
+  // Manual broadcast: only needed for testing — the app starts it by itself
+  // when a fix cannot be uploaded.
   const onToggleBeacon = async () => {
-    if (!guard()) return;
+    if (!guardDevice()) return;
     setBusy(true);
     try {
-      if (beaconOn) {
-        await stopBeacon();
-        setBeaconOn(false);
-        setBeaconStatus('Beacon stopped.');
-        setInfo('Beacon stopped.');
+      if (agent?.beaconOn) {
+        await manualBeaconStop();
+        setInfo('Broadcast stopped.');
         return;
       }
       const Location = require('expo-location');
-      // A stolen phone is often indoors, in a bag or in a moving car: a brand-new
-      // GPS fix can take minutes or never arrive. Try briefly, fall back to the
-      // last known fix, and beacon anyway with a blank position rather than
-      // staying silent — a packet with no coordinates still proves the phone is
-      // alive and within radio range of a helper.
       let fix = await Location.getLastKnownPositionAsync({ maxAge: 15 * 60 * 1000 }).catch(() => null);
       if (!fix) {
         fix = await Promise.race([
@@ -281,20 +273,14 @@ export default function Mesh() {
         battery: null,
         ownerPubB64: encodeBase64(kp.publicKey),
       });
-      await startBeacon(packet);
-      setBeaconOn(true);
-      setBeaconStatus(
-        hasFix
-          ? 'Beacon: starting… (waiting for the Bluetooth stack to confirm)'
-          : 'Beacon: starting… (no GPS fix yet — the packet carries an empty position)'
-      );
+      await manualBeacon(packet);
       setInfo(
         hasFix
-          ? 'Beacon ON — nearby helpers can now find this phone over BLE.'
-          : 'Beacon ON (last-known position unavailable) — helpers can still relay the ping.'
+          ? 'Broadcasting — nearby phones can now carry this fix.'
+          : 'Broadcasting (no position yet) — nearby phones can still carry the ping.'
       );
     } catch (e) {
-      Alert.alert('Beacon failed', e.message);
+      Alert.alert('Broadcast failed', e.message);
     } finally {
       setBusy(false);
       refresh().catch(() => {});
@@ -303,107 +289,245 @@ export default function Mesh() {
 
   if (!user) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-      </View>
+      <Screen centered>
+        <ActivityIndicator color={palette.accent} />
+      </Screen>
     );
   }
 
+  const st = agent ?? {};
+  // One plain-language headline for whatever the agent is doing right now.
+  let hero = { tone: 'ok', title: 'Automatic protection is on', text: 'Nothing to do — fixes upload and sync by themselves.' };
+  if (st.beaconOn) {
+    hero = {
+      tone: 'warn',
+      title: 'No internet — broadcasting over Bluetooth',
+      text: 'This phone sealed its location and is sending it to nearby Lost Phone Finder phones. It reaches your account automatically.',
+    };
+  } else if ((st.queuedOwn ?? 0) > 0) {
+    hero = {
+      tone: 'warn',
+      title: 'Waiting for internet',
+      text: `${st.queuedOwn} fix(es) saved on this phone. They upload automatically — no action needed.`,
+    };
+  } else if (st.scanning) {
+    hero = {
+      tone: 'info',
+      title: 'Checking for lost phones nearby',
+      text: 'Listening over Bluetooth for a phone that needs to get its location out.',
+    };
+  } else if (st.online === false) {
+    hero = {
+      tone: 'warn',
+      title: 'No internet right now',
+      text: 'Fixes are saved here and upload automatically when internet returns.',
+    };
+  }
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Offline mesh (Phase 4a + 4b)</Text>
-      <Text style={styles.sub}>
-        Queue: {backend} • {queue.length} packet(s) • BLE scan: {ble ? 'ready' : 'needs new build'}
-      </Text>
-      {info ? <Text style={styles.sub}>{info}</Text> : null}
+    <Screen scroll>
+      <Card tone={hero.tone === 'ok' ? 'success' : hero.tone === 'info' ? undefined : 'warning'}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <StatusDot tone={hero.tone} size={10} />
+          <Text style={{ flex: 1, color: palette.text, fontSize: 16, fontWeight: '800' }}>
+            {hero.title}
+          </Text>
+        </View>
+        <Text style={{ color: palette.textDim, fontSize: 13, lineHeight: 19 }}>{hero.text}</Text>
+        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+          <Chip label={`${st.queuedTotal ?? queue.length} in queue`} />
+          {st.beaconOn ? <Chip tone="warn" dot label="broadcasting" /> : null}
+          {st.scanning ? <Chip tone="info" dot label="scanning" /> : null}
+          {st.online === true ? <Chip tone="ok" dot label="internet ok" /> : null}
+        </View>
+      </Card>
 
-      <Text style={styles.section}>Act as device</Text>
-      <FlatList
-        horizontal
-        data={devices}
-        keyExtractor={(d) => d.id}
-        renderItem={({ item }) => (
-          <Pressable
-            style={[styles.chip, item.id === deviceId ? styles.chipOn : null]}
-            onPress={() => setDeviceId(item.id)}
-          >
-            <Text style={item.id === deviceId ? styles.chipTextOn : styles.chipText}>
-              {item.deviceName}
-            </Text>
-          </Pressable>
-        )}
-      />
+      <SectionTitle>Live status</SectionTitle>
+      <Card>
+        <StatusRow label="Mesh protection" value={st.active ? 'running' : 'stopped'} tone={st.active ? 'ok' : 'neutral'} />
+        <StatusRow
+          label="Internet"
+          value={st.online === true ? 'connected' : st.online === false ? 'offline' : '—'}
+          tone={st.online === true ? 'ok' : st.online === false ? 'warn' : 'neutral'}
+        />
+        <StatusRow label="Queue" value={`${st.queuedTotal ?? queue.length} packet(s) · ${backend}`} />
+        <StatusRow
+          label="Broadcasting (Bluetooth)"
+          value={st.beaconOn ? 'ON' : 'off'}
+          tone={st.beaconOn ? 'warn' : 'neutral'}
+        />
+        <StatusRow
+          label="Last helper scan"
+          value={
+            st.lastScanAt
+              ? `${sinceText(st.lastScanAt)} — heard ${st.lastScanSeen ?? 0}, read ${st.lastScanRead ?? 0}`
+              : 'starting…'
+          }
+        />
+        <StatusRow label="Carried for others" value={`${st.relayedUp ?? 0} packet(s)`} />
+        <StatusRow
+          label="Last sync from relays"
+          value={st.lastHarvestAt ? `${sinceText(st.lastHarvestAt)} (${st.lastHarvestText})` : 'pending'}
+        />
+        {st.note ? (
+          <Text style={{ color: palette.warning, fontSize: 12 }}>{st.note}</Text>
+        ) : null}
+        {st.lastScanError ? (
+          <Text style={{ color: palette.textFaint, fontSize: 12 }}>Last scan note: {st.lastScanError}</Text>
+        ) : null}
+        <Button
+          compact
+          tone="secondary"
+          style={{ alignSelf: 'flex-start', marginTop: space.xs }}
+          title="Update now"
+          onPress={onUpdateNow}
+          busy={busy}
+        />
+      </Card>
 
-      <Pressable style={styles.button} onPress={onTestRelay} disabled={busy}>
-        <Text style={styles.buttonText}>Test relay (seal → queue → upload → harvest)</Text>
-      </Pressable>
-      <View style={styles.row}>
-        <Pressable style={styles.button} onPress={onHarvest} disabled={busy}>
-          <Text style={styles.buttonText}>Harvest my relays</Text>
-        </Pressable>
-        <Pressable style={styles.button} onPress={onScan} disabled={busy}>
-          <Text style={styles.buttonText}>Helper BLE scan</Text>
-        </Pressable>
-      </View>
-      <View style={styles.row}>
-        <Pressable style={[styles.button, styles.buttonAlt]} onPress={onRadioCheck} disabled={busy}>
-          <Text style={[styles.buttonText, styles.buttonAltText]}>Radio check (list nearby BLE)</Text>
-        </Pressable>
-      </View>
-      <Pressable style={styles.button} onPress={onToggleBeacon} disabled={busy}>
-        <Text style={styles.buttonText}>
-          {beaconOn ? 'Stop BLE beacon (stolen role)' : 'Start BLE beacon (stolen role)'}
+      {info ? <Text style={{ color: palette.textDim, fontSize: 13 }}>{info}</Text> : null}
+
+      <SectionTitle>How it works</SectionTitle>
+      <Card>
+        {[
+          'No internet? This phone seals its location and broadcasts it over Bluetooth.',
+          'Any nearby Lost Phone Finder phone picks it up automatically — no taps needed.',
+          'As soon as any of those phones has internet, the fix lands in your account.',
+        ].map((line, i) => (
+          <View key={line} style={{ flexDirection: 'row', gap: 10 }}>
+            <View
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: 10,
+                backgroundColor: palette.accentSoft,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '800' }}>{i + 1}</Text>
+            </View>
+            <Text style={{ flex: 1, color: palette.textDim, fontSize: 13, lineHeight: 19 }}>{line}</Text>
+          </View>
+        ))}
+      </Card>
+
+      <Pressable onPress={() => setShowAdvanced((v) => !v)}>
+        <Text style={{ color: palette.accent, fontWeight: '700', fontSize: 13 }}>
+          {showAdvanced ? 'Hide advanced tools ▴' : 'Advanced tools (testing only) ▾'}
         </Text>
       </Pressable>
-      {beaconStatus ? <Text style={styles.status}>{beaconStatus}</Text> : null}
-      <Text style={styles.hint}>
-        {'Beacon broadcasts this phone\u2019s sealed location to nearby helpers over Bluetooth \u2014 the offline path. No internet needed on this phone while beaconing.'}
-      </Text>
 
-      <Text style={styles.section}>Queue ({queue.length})</Text>
-      <FlatList
-        data={queue}
-        keyExtractor={(p) => p.packetId}
-        renderItem={({ item }) => (
-          <Text style={styles.item}>
-            {item.packetId} • hops {item.hops ?? 0}
-          </Text>
-        )}
-      />
-    </View>
+      {showAdvanced ? (
+        <>
+          <Card>
+            <Text style={{ color: palette.textDim, fontSize: 13 }}>
+              Manual tools used during testing. The app does all of this by itself.
+            </Text>
+            <Text style={{ color: palette.textDim, fontSize: 12, marginTop: 4 }}>Act as device</Text>
+            <FlatList
+              horizontal
+              data={devices}
+              keyExtractor={(d) => d.id}
+              showsHorizontalScrollIndicator={false}
+              renderItem={({ item }) => (
+                <Pressable onPress={() => setDeviceId(item.id)}>
+                  <Chip
+                    style={{ marginRight: 8 }}
+                    tone={item.id === deviceId ? 'accent' : 'neutral'}
+                    label={item.deviceName}
+                  />
+                </Pressable>
+              )}
+            />
+            <Button
+              compact
+              tone="secondary"
+              title="Sealed packet test (upload + decrypt)"
+              onPress={onTestRelay}
+              disabled={busy}
+            />
+            <Button
+              compact
+              tone="secondary"
+              title="Harvest my relays now"
+              onPress={onHarvest}
+              disabled={busy}
+            />
+            <Button
+              compact
+              tone="secondary"
+              title="Scan for lost phones now (25 s)"
+              onPress={onScan}
+              disabled={busy}
+            />
+            <Button
+              compact
+              tone="secondary"
+              title="Radio check (list nearby Bluetooth)"
+              onPress={onRadioCheck}
+              disabled={busy}
+            />
+            <Button
+              compact
+              tone={agent?.beaconOn ? 'dangerGhost' : 'secondary'}
+              title={agent?.beaconOn ? 'Stop manual broadcast' : 'Start manual broadcast (test)'}
+              onPress={onToggleBeacon}
+              disabled={busy}
+            />
+            <Text style={{ color: palette.textFaint, fontSize: 12 }}>
+              Bluetooth scan: {ble ? 'ready on this phone' : 'needs a newer app build'}
+            </Text>
+          </Card>
+
+          <SectionTitle>Queue ({queue.length})</SectionTitle>
+          <Card style={{ paddingVertical: 4 }}>
+            {queue.length === 0 ? (
+              <EmptyState
+                icon="📭"
+                title="Queue is empty"
+                hint="Sealed fixes appear here only while they are still waiting for upload."
+              />
+            ) : (
+              queue.map((p) => (
+                <Text
+                  key={p.packetId}
+                  style={{
+                    color: palette.textDim,
+                    fontSize: 12,
+                    paddingVertical: 6,
+                    borderBottomWidth: 1,
+                    borderBottomColor: palette.border,
+                  }}
+                >
+                  {p.packetId.slice(0, 10)}… · hops {p.hops ?? 0} ·{' '}
+                  {p.ownerId === user.uid ? 'this phone' : 'from a lost phone'}
+                </Text>
+              ))
+            )}
+          </Card>
+        </>
+      ) : null}
+    </Screen>
   );
 }
 
-const createStyles = (palette) =>
-  StyleSheet.create({
-    container: { flex: 1, padding: 16, gap: 8, backgroundColor: palette.bg },
-    center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg },
-    title: { fontSize: 20, fontWeight: '700', color: palette.text },
-    sub: { color: palette.textDim },
-    section: { fontWeight: '700', marginTop: 8, color: palette.text },
-    hint: { color: palette.textDim, fontSize: 12 },
-    row: { flexDirection: 'row', gap: 8 },
-    button: {
-      flex: 1,
-      backgroundColor: palette.accent,
-      borderRadius: 10,
-      padding: 12,
-      alignItems: 'center',
-      marginTop: 4,
-    },
-    buttonText: { color: palette.onAccent, fontWeight: '600', textAlign: 'center' },
-    buttonAlt: { backgroundColor: palette.accentSoft, borderWidth: 1, borderColor: palette.accent },
-    buttonAltText: { color: palette.accent },
-    chip: {
-      borderWidth: 1,
-      borderColor: palette.borderStrong,
-      borderRadius: 16,
-      padding: 8,
-      marginRight: 8,
-    },
-    chipText: { color: palette.textDim },
-    chipOn: { backgroundColor: palette.accent, borderColor: palette.accent },
-    chipTextOn: { color: palette.onAccent },
-    status: { color: palette.success, fontSize: 12, fontWeight: '600' },
-    item: { paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: palette.border, color: palette.text },
-  });
+function StatusRow({ label, value, tone = 'neutral' }) {
+  const { palette } = useTheme();
+  const colors = {
+    ok: palette.success,
+    warn: palette.warning,
+    bad: palette.danger,
+    info: palette.info,
+    neutral: palette.textDim,
+  };
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5 }}>
+      <StatusDot tone={tone} size={7} />
+      <Text style={{ flex: 1, color: palette.textDim, fontSize: 13 }}>{label}</Text>
+      <Text style={{ color: colors[tone] ?? palette.textDim, fontSize: 13, fontWeight: '600' }}>
+        {value}
+      </Text>
+    </View>
+  );
+}

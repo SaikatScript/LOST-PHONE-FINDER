@@ -324,38 +324,43 @@ export default function DeviceDetail() {
         </Text>
       </View>
 
-      <Card>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <SectionTitle style={{ marginTop: 0 }}>Latest position</SectionTitle>
-          {latest ? <Chip dot tone={stale ? 'warn' : 'ok'} label={stale ? 'may be old' : 'fresh'} /> : null}
-        </View>
-        {latest ? (
-          <>
-            <Text style={{ color: palette.text, fontSize: 18, fontWeight: '700' }}>
-              {latest.lat.toFixed(5)}, {latest.lng.toFixed(5)}
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-              <Chip label={latest.accuracy == null ? '± ?' : `± ${Math.round(latest.accuracy)} m`} />
-              <Chip label={`🔋 ${latest.battery ?? '?'}%`} />
-              {latest.source ? (
-                <Chip tone={latest.source === 'mesh' ? 'info' : 'neutral'} label={latest.source} />
-              ) : null}
-              <Chip label={timeAgo(latest.timestamp)} />
-            </View>
-            <Text style={{ color: palette.textFaint, fontSize: 12 }}>
-              {fmtDateTime(latest.timestamp)}
-            </Text>
-            {stale ? (
-              <Text style={{ color: palette.warning, fontSize: 12, fontWeight: '600' }}>
-                This fix is {ageLabel} old — tap “Send location now” for a fresh GPS reading.
+      {/* Map first: it is the one thing owners open this screen for. The
+          position details live directly under it instead of a second card. */}
+      <Card style={{ padding: 0, overflow: 'hidden' }}>
+        <DeviceMap markers={markers} />
+        <View style={{ padding: space.lg, gap: space.sm }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <SectionTitle style={{ marginTop: 0 }}>Latest position</SectionTitle>
+            {latest ? <Chip dot tone={stale ? 'warn' : 'ok'} label={stale ? 'may be old' : 'fresh'} /> : null}
+          </View>
+          {latest ? (
+            <>
+              <Text style={{ color: palette.text, fontSize: 18, fontWeight: '700' }}>
+                {latest.lat.toFixed(5)}, {latest.lng.toFixed(5)}
               </Text>
-            ) : null}
-          </>
-        ) : (
-          <Text style={{ color: palette.textDim }}>
-            No fixes yet — tap “Send location now” below.
-          </Text>
-        )}
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                <Chip label={latest.accuracy == null ? '± ?' : `± ${Math.round(latest.accuracy)} m`} />
+                <Chip label={`🔋 ${latest.battery ?? '?'}%`} />
+                {latest.source ? (
+                  <Chip tone={latest.source === 'mesh' ? 'info' : 'neutral'} label={latest.source} />
+                ) : null}
+                <Chip label={timeAgo(latest.timestamp)} />
+              </View>
+              <Text style={{ color: palette.textFaint, fontSize: 12 }}>
+                {fmtDateTime(latest.timestamp)}
+              </Text>
+              {stale ? (
+                <Text style={{ color: palette.warning, fontSize: 12, fontWeight: '600' }}>
+                  This fix is {ageLabel} old — tap “Send location now” for a fresh GPS reading.
+                </Text>
+              ) : null}
+            </>
+          ) : (
+            <Text style={{ color: palette.textDim }}>
+              No fixes yet — tap “Send location now” below.
+            </Text>
+          )}
+        </View>
       </Card>
 
       <Button title="📍  Send location now" onPress={onSendNow} busy={busy} disabled={busy} />
@@ -378,8 +383,8 @@ export default function DeviceDetail() {
         </Text>
       </View>
 
+      <SectionTitle style={{ marginTop: space.sm }}>Theft protection</SectionTitle>
       <Card>
-        <SectionTitle style={{ marginTop: 0 }}>SIM & theft protection</SectionTitle>
         <Text style={{ color: palette.text }}>
           {device.simCarrier ?? 'Unknown carrier'}
           {device.simMccMnc ? ` • ${device.simMccMnc}` : ''}
@@ -387,36 +392,36 @@ export default function DeviceDetail() {
         <Chip
           dot
           tone={device.simSwapped ? 'bad' : 'ok'}
-          label={device.simSwapped ? 'SIM swapped — marked LOST' : 'No swap detected'}
+          label={device.simSwapped ? 'SIM swapped — marked LOST' : 'No SIM swap detected'}
         />
-        <Button
-          compact
-          tone="secondary"
-          style={{ alignSelf: 'flex-start' }}
-          title="Check SIM now"
-          onPress={onCheckSim}
-          disabled={busy}
-        />
-      </Card>
-
-      <Card tone={device.isLost ? 'danger' : undefined}>
-        <SectionTitle style={{ marginTop: 0 }}>Emergency</SectionTitle>
-        <Button
-          tone={device.isLost ? 'secondary' : 'danger'}
-          title={device.isLost ? 'Clear LOST flag' : '⚠  Mark LOST (emergency mode)'}
-          onPress={onToggleLost}
-          disabled={busy}
-        />
-        <Button
-          tone="secondary"
-          title="💬  SMS owner location"
-          onPress={onSmsOwner}
-          disabled={busy}
-        />
-      </Card>
-
-      <Card style={{ padding: 0, overflow: 'hidden' }}>
-        <DeviceMap markers={markers} />
+        <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap', marginTop: space.xs }}>
+          <Button
+            compact
+            tone="secondary"
+            title="Check SIM now"
+            onPress={onCheckSim}
+            disabled={busy}
+          />
+          <Button
+            compact
+            tone={device.isLost ? 'secondary' : 'dangerGhost'}
+            title={device.isLost ? 'Clear LOST flag' : '⚠  Mark LOST'}
+            onPress={onToggleLost}
+            disabled={busy}
+          />
+          <Button
+            compact
+            tone="secondary"
+            title="💬  SMS owner location"
+            onPress={onSmsOwner}
+            disabled={busy}
+          />
+        </View>
+        {device.isLost ? (
+          <Text style={{ color: palette.danger, fontSize: 12, fontWeight: '600' }}>
+            Emergency mode is ON — this device is flagged LOST on your account.
+          </Text>
+        ) : null}
       </Card>
 
       <SectionTitle style={{ marginTop: space.sm }}>Device settings</SectionTitle>
