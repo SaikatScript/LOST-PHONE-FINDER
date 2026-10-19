@@ -181,6 +181,23 @@ function ageText(at) {
   return Math.round(h / 24) + ' days ago';
 }
 
+// Zoom that lets the accuracy circle fit the screen. A ±500 m network fix was
+// drawn as a solid blue blob covering the whole map at the old fixed zoom 17.
+function zoomForAcc(acc, lat) {
+  var target = Math.max((acc || 60) * 2, 120) / 260;
+  var mpp = 156543 * Math.cos((lat * Math.PI) / 180);
+  var z = Math.round(Math.log2(Math.max(1, mpp / target)));
+  return Math.max(3, Math.min(18, z));
+}
+
+function frame(list) {
+  if (list.length === 1) {
+    map.setView([list[0].lat, list[0].lng], zoomForAcc(list[0].acc, list[0].lat));
+  } else {
+    map.fitBounds(list.map(function (p) { return [p.lat, p.lng]; }), { padding: [30, 30], maxZoom: 17 });
+  }
+}
+
 window.setMarkers = function (list) {
   layer.clearLayers();
   pts = [];
@@ -191,8 +208,8 @@ window.setMarkers = function (list) {
     if (m.at) html += '<br/>Fix: ' + new Date(m.at).toLocaleString() + '<br/>(' + ageText(m.at) + ')';
     if (m.acc && m.acc > 3 && m.acc < 5000) {
       L.circle([m.lat, m.lng], {
-        radius: m.acc, color: m.color, weight: 1, opacity: 0.6,
-        fillColor: m.color, fillOpacity: 0.12
+        radius: m.acc, color: m.color, weight: 1, opacity: 0.45,
+        fillColor: m.color, fillOpacity: 0.08
       }).addTo(layer);
     }
     var icon = L.divIcon({
@@ -201,18 +218,16 @@ window.setMarkers = function (list) {
       iconSize: [20, 20], iconAnchor: [10, 10]
     });
     L.marker([m.lat, m.lng], { icon: icon }).addTo(layer).bindPopup(html);
-    pts.push([m.lat, m.lng]);
+    pts.push({ lat: m.lat, lng: m.lng, acc: m.acc || 0 });
   });
   if (firstLoad && pts.length) {
-    if (pts.length === 1) map.setView(pts[0], 17);
-    else map.fitBounds(pts, { padding: [30, 30], maxZoom: 17 });
+    frame(pts);
     firstLoad = false;
   }
 };
 
 document.getElementById('recenter').onclick = function () {
-  if (pts.length === 1) map.setView(pts[0], Math.max(map.getZoom(), 17));
-  else if (pts.length > 1) map.fitBounds(pts, { padding: [30, 30], maxZoom: 17 });
+  if (pts.length) frame(pts);
 };
 
 // Marker circles need their own renderer reset when the map is resized.

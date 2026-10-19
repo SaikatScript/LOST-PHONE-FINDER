@@ -317,6 +317,18 @@ Metro reload, NO new APK):
 - Privacy Policy + Terms screens: in-app TEMPLATE text (marked as such) -
   needs legal review + hosted URLs before the Play Store submission (Phase 5D).
 - lint exit 0 + tsc --noEmit exit 0.
+- Map declutter (user report: "so many dots and blur zone, can't see the map"):
+  the dashboard map plotted all 20 history fixes WITH their accuracy circles;
+  a single +-500 m network fix at the old fixed zoom 17 already covers the whole
+  viewport, so 20 of them made a solid blue blob. Fix: the dashboard map shows
+  ONLY the latest fix (blue dot + one light circle); history stays in the list.
+  Accuracy circles lightened (fill 0.08 / stroke 1 px @ 0.45) and the map now
+  picks its zoom from the fix accuracy (zoomForAcc) so the circle fits ~260 px
+  instead of swallowing the map. The OPPO's real position was CORRECT all along
+  (latest fixes are GPS +-25 m); the blur was old +-500-700 m network fixes
+  drawn on top. Server-verified via REST.
+  NOTE: DeviceMap's Leaflet HTML is memoized in a WebView -> map drawing/style
+  changes need a FULL app reload (fast refresh only updates the marker data).
 
 --------------------------------------------------------------------------------
 PENDING

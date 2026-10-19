@@ -134,6 +134,11 @@ everything needed to continue. No secrets are stored in this repo, ever.
   LOST if the process dies before it syncs. During hardware tests verify
   writes against the REST API (project owner token in the firebase-tools
   configstore), not only the app UI, which reads its own cache back.
+- DeviceMap's interactive Leaflet map lives in a memoized WebView: editing the
+  HTML (styles, circles, zoom logic) needs a FULL app reload - Fast Refresh
+  only pushes new marker coordinates. Dashboard map intentionally shows the
+  LATEST fix only; older fixes live in the history list. Zoom is accuracy
+  aware (zoomForAcc): a +-500 m network fix zooms out so its circle fits.
 - adb-over-Wi-Fi dies whenever the phone's Wi-Fi cycles (svc wifi disable in the
   offline test): toggle Wireless debugging OFF/ON afterwards, then
   `adb mdns services` -> `adb connect <connect-port>`; a pairing code is only

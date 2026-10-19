@@ -289,16 +289,23 @@ export default function DeviceDetail() {
   const ageMin = latestMs ? Math.round((now - latestMs) / 60000) : 0;
   const stale = !!latest && Number.isFinite(ageMin) && ageMin >= 3;
   const ageLabel = ageMin < 90 ? `${ageMin} min` : `${Math.round(ageMin / 60)} h`;
-  const markers = history.slice(0, 20).map((h, i) => ({
-    id: h.id,
-    lat: h.lat,
-    lng: h.lng,
-    title: i === 0 ? 'Latest' : `Fix ${history.length - i}`,
-    description: `Battery ${h.battery ?? '?'}% • ${h.source ?? ''}`,
-    color: i === 0 ? 'red' : 'blue',
-    acc: h.accuracy ?? null,
-    at: h.timestamp?.toDate ? h.timestamp.toDate().getTime() : null,
-  }));
+  // Dashboard map shows ONLY the latest fix (plus its accuracy circle). Drawing
+  // all 20 history fixes made a wall of overlapping dots and ±500 m circles
+  // that covered the map — the history list below already shows the path.
+  const markers = latest
+    ? [
+        {
+          id: latest.id,
+          lat: latest.lat,
+          lng: latest.lng,
+          title: latest.source === 'mesh' ? 'Latest fix (via mesh)' : 'Latest fix',
+          description: `Battery ${latest.battery ?? '?'}% • ${latest.source ?? ''}`,
+          color: 'blue',
+          acc: latest.accuracy ?? null,
+          at: latestMs,
+        },
+      ]
+    : [];
 
   const header = (
     <View style={{ padding: space.lg, gap: space.md }}>
