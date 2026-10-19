@@ -28,26 +28,43 @@ async function readBatteryPercent() {
   }
 }
 
+// Pushing every delivered fix spammed Firestore: indoors the fused provider
+// re-emits the SAME ±500 m network fix every ~5 s, which filled the 50-entry
+// history in minutes and burned quota/battery. Policy: GPS-quality fixes
+// (≤100 m) flow freely (expo already gates them by 25 m / 10 min); rough
+// network fixes are capped to one per 5 minutes — honest "phone is around
+// here" pings without the flood. Rough vs good also drives the source label.
+const ROUGH_FIX_GAP_MS = 5 * 60 * 1000;
+let lastRoughPushAt = 0;
+
+async function pushTrackedBatch(tracked, locations) {
+  const battery = await readBatteryPercent();
+  for (const loc of locations) {
+    const acc = loc.coords.accuracy ?? null;
+    const rough = !(acc != null && acc <= 100);
+    if (rough && Date.now() - lastRoughPushAt < ROUGH_FIX_GAP_MS) continue;
+    try {
+      await pushLocation(tracked.userId, tracked.deviceId, {
+        lat: loc.coords.latitude,
+        lng: loc.coords.longitude,
+        accuracy: acc,
+        battery,
+        source: rough ? 'network fallback' : 'gps',
+      });
+      if (rough) lastRoughPushAt = Date.now();
+    } catch {
+      // Offline: drop (Phase 2). Local queue + retry comes with mesh work.
+    }
+  }
+}
+
 TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
   if (error) return;
   const tracked = await readTrackedDevice();
   if (!tracked) return;
   const locations = data?.locations ?? [];
   if (!locations.length) return;
-  const battery = await readBatteryPercent();
-  for (const loc of locations) {
-    try {
-      await pushLocation(tracked.userId, tracked.deviceId, {
-        lat: loc.coords.latitude,
-        lng: loc.coords.longitude,
-        accuracy: loc.coords.accuracy ?? null,
-        battery,
-        source: 'gps',
-      });
-    } catch {
-      // Offline: drop (Phase 2). Local queue + retry comes with mesh work.
-    }
-  }
+  await pushTrackedBatch(tracked, locations);
   // Phase 3: piggyback SIM-swap check on every background location batch.
   try {
     const { checkSimChange } = require('./sim');
@@ -155,14 +172,7 @@ export async function startTracking(userId, deviceId) {
       },
       async (pos) => {
         try {
-          const battery = await readBatteryPercent();
-          await pushLocation(userId, deviceId, {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracy: pos.coords.accuracy ?? null,
-            battery,
-            source: 'gps',
-          });
+          await pushTrackedBatch({ userId, deviceId }, [pos]);
         } catch {
           // ignore transient write failures
         }

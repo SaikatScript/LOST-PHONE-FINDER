@@ -1,5 +1,14 @@
-import { useEffect, useState } from 'react';
-import { View, Text, Pressable, FlatList, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  Pressable,
+  FlatList,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  AppState,
+} from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { subscribeToDevice, updateDevice } from '../../lib/devices';
@@ -29,14 +38,33 @@ export default function DeviceDetail() {
     return () => clearInterval(t);
   }, []);
 
+  // Refs used by the auto-refresh below. Declared before the subscription
+  // effect so its snapshot callback can feed historyRef directly.
+  const autoInFlight = useRef(false);
+  const autoLastAt = useRef(0);
+  const historyReady = useRef(false);
+  const historyRef = useRef([]);
+  const doAutoRefreshRef = useRef(() => {});
+
   useEffect(() => {
     if (!user) {
       router.replace('/login');
       return;
     }
     const un1 = subscribeToDevice(user.uid, id, setDevice, (e) => setError(e.message));
-    const un2 = subscribeToLocations(user.uid, id, 50, setHistory, (e) =>
-      setError(e.message)
+    const un2 = subscribeToLocations(
+      user.uid,
+      id,
+      50,
+      (data) => {
+        // Fresh snapshot: remember it, mark ready, then let the auto-refresh
+        // decide (it skips when the newest fix is younger than 2 minutes).
+        historyRef.current = data;
+        historyReady.current = true;
+        setHistory(data);
+        doAutoRefreshRef.current();
+      },
+      (e) => setError(e.message)
     );
     isTracking().then(setTracking).catch(() => {});
     return () => {
@@ -44,6 +72,39 @@ export default function DeviceDetail() {
       un2();
     };
   }, [user, id]);
+
+  // Auto-refresh like a maps app: when this screen opens or the app returns to
+  // the foreground, a stale fix (older than 2 min) is quietly replaced by a
+  // fresh one. Without this, the screen kept showing e.g. the 02:10 fix until
+  // the 10-minute background task happened to fire — users saw an "old/wrong"
+  // position right after Google Maps had shown the correct one.
+  // pushCurrentLocationNow has a capped chain (~35 s worst case), so a failed
+  // attempt is cheap and silent; the on-screen stale-fix hint explains what to
+  // do when it never succeeds (indoors, no sky view).
+  const doAutoRefresh = useCallback(() => {
+    if (!user || autoInFlight.current || !historyReady.current) return;
+    const nowMs = Date.now();
+    if (nowMs - autoLastAt.current < 60 * 1000) return;
+    const ts = historyRef.current[0]?.timestamp;
+    const newestMs = ts?.toDate ? ts.toDate().getTime() : ts ? new Date(ts).getTime() : 0;
+    if (Number.isFinite(newestMs) && newestMs > 0 && nowMs - newestMs < 2 * 60 * 1000) return;
+    autoLastAt.current = nowMs;
+    autoInFlight.current = true;
+    pushCurrentLocationNow(user.uid, id)
+      .catch(() => {})
+      .finally(() => {
+        autoInFlight.current = false;
+      });
+  }, [user, id]);
+  useEffect(() => {
+    doAutoRefreshRef.current = doAutoRefresh;
+  });
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') doAutoRefresh();
+    });
+    return () => sub.remove();
+  }, [doAutoRefresh]);
 
   const guard = () => {
     if (!user) {
@@ -201,7 +262,9 @@ export default function DeviceDetail() {
       </Text>
       {(() => {
         if (!latest || !now) return null;
-        const ageMin = Math.round((now - new Date(latest.timestamp).getTime()) / 60000);
+        const ts = latest.timestamp;
+        const ms = ts?.toDate ? ts.toDate().getTime() : ts ? new Date(ts).getTime() : NaN;
+        const ageMin = Math.round((now - ms) / 60000);
         if (!Number.isFinite(ageMin) || ageMin < 3) return null;
         return (
           <Text style={styles.warn}>
