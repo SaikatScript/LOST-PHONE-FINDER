@@ -1,0 +1,77 @@
+================================================================================
+LOST PHONE FINDER - WHAT IS DONE SO FAR
+Last updated: 19 October 2026
+================================================================================
+
+WHAT THE APP IS
+A phone anti-theft app. If your phone is lost or stolen, you can see where it
+is - and later you will also be able to ring / lock / erase it from your app.
+Built with Expo (React Native) + Firebase cloud.
+
+================================================================================
+1. DONE AND WORKING (tested on real phones)
+================================================================================
+
+ACCOUNT
+ 1. Register / login with email + password (Firebase).
+ 2. "My Devices" list - updates live from the cloud.
+ 3. Add a phone to your account (name, model, owner phone number).
+
+LIVE LOCATION
+ 4. "Send location now" button - instant fresh position.
+ 5. Automatic background tracking: every 10 min or 25 m movement, with a small
+    notification. Battery % saved with every fix.
+ 6. Location history (last 50 fixes) + live map (red = latest, blue = older)
+    with Satellite / Streets / Terrain layers. No paid map key needed.
+ 7. Map shows accuracy circle and fix age; warns if the position is older
+    than 3 minutes. Opening the device screen auto-refreshes a stale fix
+    (verified live: fresh fix ~6 s after opening, no taps).
+
+THEFT ALERTS
+ 8. SIM-swap detection: app remembers your SIM at setup; if the SIM changes,
+    the phone flips to "LOST" + "SIM swapped" and shows an alert on the phone.
+ 9. Manual Mark-LOST / Clear-LOST button.
+10. SMS composer with prefilled Google Maps link + battery - you just tap send.
+
+OFFLINE MESH (the big one - works when the lost phone has NO internet)
+11. The lost phone broadcasts its location sealed & encrypted over Bluetooth.
+12. Any other phone with this app can read it and upload it to the cloud.
+    The helper phone CANNOT read the location - only you (the owner) can.
+13. You tap "Harvest my relays" in your app and the lost phone's location
+    appears in your history, marked "mesh".
+14. PROVEN end-to-end on 2 real phones, BOTH directions:
+    - Samsung beacon + OPPO helper: "checked 5, decrypted 5" -> 5 positions.
+    - OPPO offline beacon + Samsung helper: relay landed in history -
+      verified directly in the cloud database (the exact location the OPPO
+      sealed while it had no internet).
+    - Zero-internet proof: the beacon phone ran with Wi-Fi OFF (no internet
+      at all) and still worked.
+15. Self-healing relay queue: packets read while a helper is offline are
+    uploaded automatically later - nothing gets stuck.
+
+PLATFORM / INFRASTRUCTURE
+16. Android development build (APK) installed on both test phones.
+17. Firebase security rules: only the owner can read their own data/relays.
+18. All code committed + pushed to GitHub; project docs kept up to date.
+
+================================================================================
+2. STILL TO DO (next features)
+================================================================================
+
+ A. Remote actions: Ring (loud alarm) / Lock / Wipe - from your app.
+ B. Instant alert (push notification) to you when a new location arrives
+    (needs Firebase billing "Blaze" plan).
+ C. Secret SMS commands - control the phone by SMS even with no internet.
+ D. Play Store release - final polish, security check, publish.
+
+================================================================================
+3. TEST PHONES USED
+================================================================================
+
+ Samsung A50 (Android 11)  - account: saikat@outlook.com
+ OPPO CPH2729 (Android 16) - account: saikat@rpconsultancy.net
+ Both on the same Wi-Fi. Bluetooth features tested between the two phones.
+
+================================================================================
+END OF SUMMARY
+================================================================================
