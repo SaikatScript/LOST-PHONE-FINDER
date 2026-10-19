@@ -248,6 +248,20 @@ Two real bugs found while confirming (commit 83fd9c9):
      packets when online ("heal the queue").
 Verified on the Samsung after the fix: Queue 5 -> 0 (all pending relays,
 today's included, are now in the cloud; the flush only removes on success).
+FINAL RESULT (verified directly against Firestore via the project REST API,
+19 Oct ~19:50): the OPPO's own harvest SUCCEEDED at 17:26:50-52 IST - three
+mesh fixes were folded into its device history, including
+lat 24.1752041, lng 87.9100352 +/-700 m, which is EXACTLY the fix the OPPO
+sealed while offline at 17:03:58. The relays collection is empty now because
+harvest deletes each relay after decrypting (single-use). The user's later
+"checked 0" taps were re-harvests of an already consumed queue - 0 is the
+correct, expected answer at that point. FULL CHAIN PROVEN END-TO-END:
+offline seal -> BLE read by a different-account phone -> relay to the cloud ->
+owner harvest -> decrypted fix in history.
+Also learned: React Native Firestore keeps pending writes in the IN-MEMORY
+cache by default (no persistence) - a write made while the app is offline is
+lost if the process dies before it syncs. During testing, verify writes with
+the local queue AND the REST API, not just the app's own (cache-fed) UI.
 
 --------------------------------------------------------------------------------
 PENDING

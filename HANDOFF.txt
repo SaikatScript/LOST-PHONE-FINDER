@@ -110,6 +110,15 @@ everything needed to continue. No secrets are stored in this repo, ever.
   `ownerId` = the BROKEN phone's owner; only that owner can read/decrypt them.
   A "Harvest my relays" on the HELPER's account showing "checked 0" for a
   packet it just relayed is EXPECTED - harvest on the owner's account.
+  Relays are SINGLE-USE: harvest deletes them after decrypting, so a second
+  tap (or a screenshot taken later) always shows "checked 0" - that is
+  success, not failure. Confirm the real outcome in the owner's device
+  History: a relayed fix appears with source "mesh".
+- React Native Firestore runs with an IN-MEMORY cache by default (no
+  persistence). A write made while the app is offline resolves locally and is
+  LOST if the process dies before it syncs. During hardware tests verify
+  writes against the REST API (project owner token in the firebase-tools
+  configstore), not only the app UI, which reads its own cache back.
 - adb-over-Wi-Fi dies whenever the phone's Wi-Fi cycles (svc wifi disable in the
   offline test): toggle Wireless debugging OFF/ON afterwards, then
   `adb mdns services` -> `adb connect <connect-port>`; a pairing code is only
