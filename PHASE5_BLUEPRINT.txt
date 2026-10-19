@@ -1,0 +1,125 @@
+================================================================================
+LOST PHONE FINDER - MASTER BLUEPRINT: REMAINING PHASES
+From Current State to Production Release
+Date: 19 October 2026
+================================================================================
+
+CURRENT STATUS
+--------------
+[DONE] Account & Device List
+[DONE] Background Location Tracking (10 min / 25m)
+[DONE] Maps (Leaflet/Esri, History, Accuracy)
+[DONE] SIM-Swap Heuristic + SMS Composer
+[DONE] OFFLINE MESH: BLE Beacon -> Helper Relay -> Cloud -> Owner Harvest
+[DONE] NaCl End-to-End Encryption for Mesh packets
+[DONE] Firebase Firestore + Owner-only Rules
+
+================================================================================
+PHASE 5A - UI REDESIGN & ACCOUNT POLISH (Priority: HIGH, Effort: LOW)
+================================================================================
+Goal: Make the app look modern, safe, and cool. Fix basic account UX.
+
+1. UI REDESIGN (See previous MUSE SPARK PROMPT)
+   - Implement Dark Mode-first design system.
+   - Build reusable components (Card, Chip, PrimaryButton, StatusDot).
+   - Redesign screens: /login, /register, /devices, /device/[id], /map.
+   - Make the Device screen look like a modern dashboard, not a settings dump.
+
+2. ACCOUNT RECOVERY & MANAGEMENT
+   - Forgot Password flow (Firebase Auth sendPasswordResetEmail).
+   - Email Verification on signup (optional but recommended).
+   - Rename Device (edit deviceName in Firestore).
+   - Remove Device (delete device doc + subcollections).
+
+3. SETTINGS SCREEN (New)
+   - Profile info + Sign out.
+   - Dark/Light mode toggle.
+   - Links to Privacy Policy and Terms of Service.
+
+================================================================================
+PHASE 5B - ANTI-THEFT HARDENING (Priority: CRITICAL, Effort: HIGH)
+================================================================================
+Goal: Stop the thief from easily defeating the app.
+
+1. ANTI-UNINSTALL (Device Admin)
+   - Native Android module using DevicePolicyManager.
+   - Config plugin for AndroidManifest (DeviceAdminReceiver).
+   - User flow: Prompt to activate admin during device setup.
+   - Result: Thief must deactivate admin before uninstalling (extra steps).
+   - Advanced: Device Owner mode (via ADB) to completely block uninstall.
+
+2. BOOT RECEIVER (Auto-Start)
+   - Native module listening for BOOT_COMPLETED.
+   - Automatically restarts the Foreground Service and BLE Beacon if the
+     phone is rebooted.
+
+3. FOREGROUND SERVICE PERSISTENCE
+   - Ensure the location task is running as a true Android Foreground Service.
+   - Add a battery optimization whitelist prompt for OEMs (Xiaomi, Oppo).
+
+================================================================================
+PHASE 5C - OWNER ALERTS & REMOTE CONTROL (Priority: HIGH, Effort: MEDIUM)
+================================================================================
+Goal: Owner gets instant alerts and can control the device from afar.
+
+Note: Requires upgrading Firebase to the "Blaze" (Pay-as-you-go) plan.
+The free tier for Cloud Functions/FCM is massive; you won't be charged for
+normal testing.
+
+1. PUSH NOTIFICATIONS (FCM)
+   - Register device FCM tokens on login (users/{uid}/tokens/{tokenId}).
+   - Deploy Cloud Functions (Node.js):
+       - Trigger on SIM Swap -> Send FCM push to owner.
+       - Trigger on LOST flag -> Send FCM push to owner.
+       - Trigger on new Mesh Relay Harvest -> Send FCM push to owner.
+   - Handle notification tap -> navigate to /device/[id].
+
+2. REMOTE ACTIONS (Ring / Lock / Wipe)
+   - UI: Add buttons to the Device screen.
+   - Cloud Function writes a command to: users/{uid}/devices/{did}/commands
+   - The stolen phone listens to this doc. If a command appears, execute:
+       - RING: Play loud alarm at max volume.
+       - LOCK: Lock screen with a custom message (DevicePolicyManager).
+       - WIPE: Factory reset (Requires Device Admin).
+
+================================================================================
+PHASE 5D - ADVANCED FEATURES & RELEASE (Priority: MEDIUM, Effort: MEDIUM)
+================================================================================
+Goal: Power features and publishing to the Play Store.
+
+1. SECRET SMS COMMANDS
+   - If the phone is offline but has a SIM, the owner can text a secret code.
+   - Native Android SMS Receiver reads the SMS.
+   - If it matches the code (e.g., "LOST123"), the phone sends back its GPS
+     location via SMS, or triggers a loud ring.
+
+2. GEOFENCING
+   - Use expo-location geofencing.
+   - Allow user to define "Safe Zones" (e.g., Home).
+   - Alert the owner if the device leaves the zone without permission.
+
+3. E2E ENCRYPTION FOR ONLINE MODE
+   - Currently, online location data (written to Firestore) is plaintext.
+   - Apply NaCl encryption to the payload before writing to Firestore.
+   - Decrypt only on the owner's app.
+
+4. PLAY STORE RELEASE
+   - Finalize Privacy Policy and Terms of Service.
+   - Firebase App Check (prevent API abuse).
+   - Crashlytics + Analytics setup.
+   - Production Build (EAS build --profile production).
+   - App Store Listing (Screenshots, description, icon).
+   - Publish.
+
+================================================================================
+RECOMMENDED EXECUTION ORDER
+================================================================================
+
+  Sprint 1: Phase 5A (UI & Account) - Fast, visual, gets the app looking right.
+  Sprint 2: Phase 5B (Hardening) - Device Admin & Boot Receiver.
+  Sprint 3: Phase 5C (Push & Remote) - Upgrade to Blaze, Cloud Functions.
+  Sprint 4: Phase 5D (Advanced) - SMS Commands, E2E Online, Play Store.
+
+================================================================================
+END OF BLUEPRINT
+================================================================================

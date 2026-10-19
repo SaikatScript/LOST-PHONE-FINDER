@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, FlatList, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { encodeBase64 } from 'tweetnacl-util';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { subscribeToDevices } from '../lib/devices';
 import { ensureDeviceKeys, sealLocationPacket } from '../lib/meshCrypto';
 import { enqueuePacket, listPackets, queueBackend, removePacket } from '../lib/meshQueue';
@@ -20,6 +21,10 @@ const ADV_ERROR = {
 
 export default function Mesh() {
   const { user } = useAuth();
+  const { palette } = useTheme();
+  // Themed stylesheet (Phase 5A): derived from the active palette so this
+  // screen stays readable in dark mode too.
+  const styles = useMemo(() => createStyles(palette), [palette]);
   const [devices, setDevices] = useState([]);
   const [deviceId, setDeviceId] = useState(null);
   const [queue, setQueue] = useState([]);
@@ -322,7 +327,9 @@ export default function Mesh() {
             style={[styles.chip, item.id === deviceId ? styles.chipOn : null]}
             onPress={() => setDeviceId(item.id)}
           >
-            <Text style={item.id === deviceId ? styles.chipTextOn : null}>{item.deviceName}</Text>
+            <Text style={item.id === deviceId ? styles.chipTextOn : styles.chipText}>
+              {item.deviceName}
+            </Text>
           </Pressable>
         )}
       />
@@ -340,7 +347,7 @@ export default function Mesh() {
       </View>
       <View style={styles.row}>
         <Pressable style={[styles.button, styles.buttonAlt]} onPress={onRadioCheck} disabled={busy}>
-          <Text style={styles.buttonText}>Radio check (list nearby BLE)</Text>
+          <Text style={[styles.buttonText, styles.buttonAltText]}>Radio check (list nearby BLE)</Text>
         </Pressable>
       </View>
       <Pressable style={styles.button} onPress={onToggleBeacon} disabled={busy}>
@@ -367,27 +374,36 @@ export default function Mesh() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 8 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 20, fontWeight: '700' },
-  sub: { color: '#555' },
-  section: { fontWeight: '700', marginTop: 8 },
-  hint: { color: '#666', fontSize: 12 },
-  row: { flexDirection: 'row', gap: 8 },
-  button: {
-    flex: 1,
-    backgroundColor: '#111',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  buttonText: { color: '#fff', fontWeight: '600', textAlign: 'center' },
-  chip: { borderWidth: 1, borderColor: '#111', borderRadius: 16, padding: 8, marginRight: 8 },
-  buttonAlt: { backgroundColor: '#0b5d1e' },
-  status: { color: '#0b5d1e', fontSize: 12, fontWeight: '600' },
-  chipOn: { backgroundColor: '#111' },
-  chipTextOn: { color: '#fff' },
-  item: { paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#eee' },
-});
+const createStyles = (palette) =>
+  StyleSheet.create({
+    container: { flex: 1, padding: 16, gap: 8, backgroundColor: palette.bg },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bg },
+    title: { fontSize: 20, fontWeight: '700', color: palette.text },
+    sub: { color: palette.textDim },
+    section: { fontWeight: '700', marginTop: 8, color: palette.text },
+    hint: { color: palette.textDim, fontSize: 12 },
+    row: { flexDirection: 'row', gap: 8 },
+    button: {
+      flex: 1,
+      backgroundColor: palette.accent,
+      borderRadius: 10,
+      padding: 12,
+      alignItems: 'center',
+      marginTop: 4,
+    },
+    buttonText: { color: palette.onAccent, fontWeight: '600', textAlign: 'center' },
+    buttonAlt: { backgroundColor: palette.accentSoft, borderWidth: 1, borderColor: palette.accent },
+    buttonAltText: { color: palette.accent },
+    chip: {
+      borderWidth: 1,
+      borderColor: palette.borderStrong,
+      borderRadius: 16,
+      padding: 8,
+      marginRight: 8,
+    },
+    chipText: { color: palette.textDim },
+    chipOn: { backgroundColor: palette.accent, borderColor: palette.accent },
+    chipTextOn: { color: palette.onAccent },
+    status: { color: palette.success, fontSize: 12, fontWeight: '600' },
+    item: { paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: palette.border, color: palette.text },
+  });

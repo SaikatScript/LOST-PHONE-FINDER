@@ -4,6 +4,8 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  sendPasswordResetEmail,
+  sendEmailVerification,
 } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
@@ -30,6 +32,13 @@ export function AuthProvider({ children }) {
       { email, phone, createdAt: serverTimestamp() },
       { merge: true }
     );
+    // Phase 5A: nudge new accounts to verify their email (best effort — a
+    // failed send must never block registration; Settings can resend).
+    try {
+      await sendEmailVerification(cred.user);
+    } catch {
+      // ignore — resend available in Settings
+    }
     return cred.user;
   };
 
@@ -38,8 +47,17 @@ export function AuthProvider({ children }) {
 
   const logOut = () => signOut(auth);
 
+  // Phase 5A account recovery.
+  const resetPassword = (email) => sendPasswordResetEmail(auth, email);
+  const resendVerification = async () => {
+    const u = auth.currentUser;
+    if (u && !u.emailVerified) await sendEmailVerification(u);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, signUp, signIn, logOut }}>
+    <AuthContext.Provider
+      value={{ user, loading, signUp, signIn, logOut, resetPassword, resendVerification }}
+    >
       {children}
     </AuthContext.Provider>
   );

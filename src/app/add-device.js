@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
+import { Alert, Text } from 'react-native';
 import { router } from 'expo-router';
 import * as Device from 'expo-device';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
+import { Screen, Button, TextField } from '../components/ui';
 import { registerDevice } from '../lib/devices';
 
 export default function AddDevice() {
   const { user } = useAuth();
+  const { palette } = useTheme();
   const [name, setName] = useState(`${Device.manufacturer ?? 'My'} ${Device.modelName ?? 'Android'}`);
   const [ownerPhone, setOwnerPhone] = useState('');
   const [busy, setBusy] = useState(false);
@@ -38,32 +41,23 @@ export default function AddDevice() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Register this phone</Text>
-      <Text style={styles.sub}>
-        Phase 1: saves name + model to users/{'{uid}'}/devices. Location, SIM and mesh come in
-        later phases.
+    <Screen scroll edges={['bottom']}>
+      <Text style={{ fontSize: 24, fontWeight: '800', color: palette.text }}>
+        Register this phone
       </Text>
-      <TextInput style={styles.input} placeholder="Device name" value={name} onChangeText={setName} />
-      <TextInput
-        style={styles.input}
-        placeholder="Owner phone for SMS fallback"
+      <Text style={{ color: palette.textDim }}>
+        Saves this phone to your account so you can track it, watch its SIM, and use the offline
+        mesh.
+      </Text>
+      <TextField label="Device name" placeholder="My phone" value={name} onChangeText={setName} />
+      <TextField
+        label="Owner phone (SMS fallback)"
+        placeholder="+91 …"
         keyboardType="phone-pad"
         value={ownerPhone}
         onChangeText={setOwnerPhone}
       />
-      <Pressable style={styles.button} onPress={onAdd} disabled={busy}>
-        <Text style={styles.buttonText}>{busy ? 'Saving…' : 'Save device'}</Text>
-      </Pressable>
-    </View>
+      <Button title="Save device" onPress={onAdd} busy={busy} disabled={busy} />
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, gap: 12 },
-  title: { fontSize: 22, fontWeight: '700' },
-  sub: { color: '#666' },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12 },
-  button: { backgroundColor: '#111', borderRadius: 8, padding: 14, alignItems: 'center' },
-  buttonText: { color: '#fff', fontWeight: '600' },
-});

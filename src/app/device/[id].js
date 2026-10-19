@@ -1,17 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  Pressable,
-  FlatList,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-  AppState,
-} from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { View, Text, FlatList, Alert, ActivityIndicator, AppState } from 'react-native';
+import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
-import { subscribeToDevice, updateDevice } from '../../lib/devices';
+import { useTheme } from '../../context/ThemeContext';
+import { subscribeToDevice, updateDevice, renameDevice, removeDevice } from '../../lib/devices';
 import { subscribeToLocations } from '../../lib/locations';
 import {
   startTracking,
@@ -19,16 +11,31 @@ import {
   pushCurrentLocationNow,
   isTracking,
 } from '../../lib/tracking';
+import { fmtDateTime, timeAgo, toMillis } from '../../lib/format';
 import DeviceMap from '../../components/DeviceMap';
+import {
+  Screen,
+  Card,
+  Chip,
+  Button,
+  TextField,
+  SectionTitle,
+  StatusDot,
+  EmptyState,
+} from '../../components/ui';
+import { space } from '../../theme';
 
 export default function DeviceDetail() {
   const { id } = useLocalSearchParams();
   const { user } = useAuth();
+  const { palette } = useTheme();
   const [device, setDevice] = useState(null);
   const [history, setHistory] = useState([]);
   const [tracking, setTracking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
   // Clock for "this fix is N minutes old". Kept in state (updated by an effect)
   // so the render body never calls Date.now() directly.
   const [now, setNow] = useState(() => Date.now());
@@ -86,7 +93,7 @@ export default function DeviceDetail() {
     const nowMs = Date.now();
     if (nowMs - autoLastAt.current < 60 * 1000) return;
     const ts = historyRef.current[0]?.timestamp;
-    const newestMs = ts?.toDate ? ts.toDate().getTime() : ts ? new Date(ts).getTime() : 0;
+    const newestMs = toMillis(ts);
     if (Number.isFinite(newestMs) && newestMs > 0 && nowMs - newestMs < 2 * 60 * 1000) return;
     autoLastAt.current = nowMs;
     autoInFlight.current = true;
@@ -218,16 +225,70 @@ export default function DeviceDetail() {
     }
   };
 
+  const onSaveName = async () => {
+    if (!guard()) return;
+    const clean = nameDraft.trim();
+    if (!clean) return Alert.alert('Name required', 'Enter a device name.');
+    setBusy(true);
+    try {
+      await renameDevice(user.uid, id, clean);
+      setEditingName(false);
+    } catch (e) {
+      Alert.alert('Rename failed', e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onRemove = async () => {
+    if (!guard()) return;
+    setBusy(true);
+    try {
+      await removeDevice(user.uid, id);
+      router.replace('/devices');
+    } catch (e) {
+      Alert.alert('Remove failed', e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmRemove = () => {
+    Alert.alert(
+      'Remove device?',
+      `“${device?.deviceName ?? 'This device'}” and its location history will be deleted from your account. The phone itself is not affected.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: onRemove },
+      ]
+    );
+  };
+
   if (!device) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-      </View>
+      <>
+        <Stack.Screen options={{ title: 'Device' }} />
+        <View
+          style={{
+            flex: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: palette.bg,
+            gap: 8,
+          }}
+        >
+          <ActivityIndicator color={palette.accent} />
+          {error ? <Text style={{ color: palette.danger }}>{error}</Text> : null}
+        </View>
+      </>
     );
   }
 
   const latest = history[0];
+  const latestMs = latest ? toMillis(latest.timestamp) : null;
+  const ageMin = latestMs ? Math.round((now - latestMs) / 60000) : 0;
+  const stale = !!latest && Number.isFinite(ageMin) && ageMin >= 3;
+  const ageLabel = ageMin < 90 ? `${ageMin} min` : `${Math.round(ageMin / 60)} h`;
   const markers = history.slice(0, 20).map((h, i) => ({
     id: h.id,
     lat: h.lat,
@@ -238,123 +299,231 @@ export default function DeviceDetail() {
     acc: h.accuracy ?? null,
     at: h.timestamp?.toDate ? h.timestamp.toDate().getTime() : null,
   }));
-  const fmtTs = (ts) => {
-    try {
-      return ts?.toDate ? ts.toDate().toLocaleString() : '';
-    } catch {
-      return '';
-    }
-  };
 
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{device.deviceName}</Text>
-      <Text style={styles.sub}>
-        {device.deviceModel} • Battery {device.lastBattery ?? '?'}% •{' '}
-        {device.isLost ? 'LOST' : 'OK'}
-      </Text>
-      <Text style={styles.sub}>
-        {latest
-          ? `Latest fix: ${latest.lat.toFixed(5)}, ${latest.lng.toFixed(5)}` +
-            `${latest.accuracy ? ` (±${Math.round(latest.accuracy)} m)` : ''}` +
-            ` (${fmtTs(latest.timestamp)})`
-          : 'No fixes yet — send the first location.'}
-      </Text>
-      {(() => {
-        if (!latest || !now) return null;
-        const ts = latest.timestamp;
-        const ms = ts?.toDate ? ts.toDate().getTime() : ts ? new Date(ts).getTime() : NaN;
-        const ageMin = Math.round((now - ms) / 60000);
-        if (!Number.isFinite(ageMin) || ageMin < 3) return null;
-        return (
-          <Text style={styles.warn}>
-            This fix is {ageMin < 90 ? `${ageMin} min` : `${Math.round(ageMin / 60)} h`} old — tap
-            “Send location now” for a fresh GPS reading.
+  const header = (
+    <View style={{ padding: space.lg, gap: space.md }}>
+      <View style={{ gap: 4 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Text
+            style={{ flex: 1, fontSize: 24, fontWeight: '800', color: palette.text }}
+            numberOfLines={1}
+          >
+            {device.deviceName}
           </Text>
-        );
-      })()}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-
-      <View style={styles.row}>
-        <Pressable style={styles.button} onPress={onSendNow} disabled={busy}>
-          <Text style={styles.buttonText}>Send location now</Text>
-        </Pressable>
-        {tracking ? (
-          <Pressable style={[styles.button, styles.stop]} onPress={onStop} disabled={busy}>
-            <Text style={styles.buttonText}>Stop tracking</Text>
-          </Pressable>
-        ) : (
-          <Pressable style={styles.button} onPress={onStart} disabled={busy}>
-            <Text style={styles.buttonText}>Track every 10 min</Text>
-          </Pressable>
-        )}
-      </View>
-      <Text style={styles.hint}>
-        {tracking
-          ? 'Tracking ON for this phone.'
-          : 'Enable tracking on the phone you want to locate (uses this phone’s GPS).'}
-      </Text>
-
-      <Text style={styles.section}>SIM & theft protection</Text>
-      <Text style={styles.sub}>
-        SIM: {device.simCarrier ?? 'unknown carrier'}
-        {device.simMccMnc ? ` • ${device.simMccMnc}` : ''} •{' '}
-        {device.simSwapped ? 'SWAPPED — marked LOST' : 'no swap detected'}
-      </Text>
-      <View style={styles.row}>
-        <Pressable style={styles.button} onPress={onCheckSim} disabled={busy}>
-          <Text style={styles.buttonText}>Check SIM now</Text>
-        </Pressable>
-        <Pressable style={styles.button} onPress={onSmsOwner} disabled={busy}>
-          <Text style={styles.buttonText}>SMS owner location</Text>
-        </Pressable>
-      </View>
-      <Pressable
-        style={[styles.button, device.isLost ? styles.stop : null]}
-        onPress={onToggleLost}
-        disabled={busy}
-      >
-        <Text style={styles.buttonText}>
-          {device.isLost ? 'Clear LOST flag' : 'Mark LOST (emergency mode)'}
+          <Chip dot tone={device.isLost ? 'bad' : 'ok'} label={device.isLost ? 'LOST' : 'OK'} />
+        </View>
+        <Text style={{ color: palette.textDim, fontSize: 13 }} numberOfLines={2}>
+          {device.deviceModel}
         </Text>
-      </Pressable>
+      </View>
 
-      <DeviceMap markers={markers} />
-
-      <Text style={styles.section}>History ({history.length})</Text>
-      <FlatList
-        data={history}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <Text style={styles.item}>
-            {item.lat.toFixed(5)}, {item.lng.toFixed(5)} • ±
-            {item.accuracy == null ? '?' : `${Math.round(item.accuracy)}m`} •{' '}
-            {item.battery ?? '?'}% • {fmtTs(item.timestamp)}
+      <Card>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <SectionTitle style={{ marginTop: 0 }}>Latest position</SectionTitle>
+          {latest ? <Chip dot tone={stale ? 'warn' : 'ok'} label={stale ? 'may be old' : 'fresh'} /> : null}
+        </View>
+        {latest ? (
+          <>
+            <Text style={{ color: palette.text, fontSize: 18, fontWeight: '700' }}>
+              {latest.lat.toFixed(5)}, {latest.lng.toFixed(5)}
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+              <Chip label={latest.accuracy == null ? '± ?' : `± ${Math.round(latest.accuracy)} m`} />
+              <Chip label={`🔋 ${latest.battery ?? '?'}%`} />
+              {latest.source ? (
+                <Chip tone={latest.source === 'mesh' ? 'info' : 'neutral'} label={latest.source} />
+              ) : null}
+              <Chip label={timeAgo(latest.timestamp)} />
+            </View>
+            <Text style={{ color: palette.textFaint, fontSize: 12 }}>
+              {fmtDateTime(latest.timestamp)}
+            </Text>
+            {stale ? (
+              <Text style={{ color: palette.warning, fontSize: 12, fontWeight: '600' }}>
+                This fix is {ageLabel} old — tap “Send location now” for a fresh GPS reading.
+              </Text>
+            ) : null}
+          </>
+        ) : (
+          <Text style={{ color: palette.textDim }}>
+            No fixes yet — tap “Send location now” below.
           </Text>
         )}
-      />
+      </Card>
+
+      <Button title="📍  Send location now" onPress={onSendNow} busy={busy} disabled={busy} />
+      {tracking ? (
+        <Button tone="secondary" title="Stop tracking" onPress={onStop} disabled={busy} />
+      ) : (
+        <Button
+          tone="secondary"
+          title="Start background tracking (every 10 min)"
+          onPress={onStart}
+          disabled={busy}
+        />
+      )}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <StatusDot tone={tracking ? 'ok' : 'neutral'} />
+        <Text style={{ color: palette.textDim, fontSize: 12, flex: 1 }}>
+          {tracking
+            ? 'Tracking is ON for this phone.'
+            : 'Tracking is off — turn it on for automatic updates.'}
+        </Text>
+      </View>
+
+      <Card>
+        <SectionTitle style={{ marginTop: 0 }}>SIM & theft protection</SectionTitle>
+        <Text style={{ color: palette.text }}>
+          {device.simCarrier ?? 'Unknown carrier'}
+          {device.simMccMnc ? ` • ${device.simMccMnc}` : ''}
+        </Text>
+        <Chip
+          dot
+          tone={device.simSwapped ? 'bad' : 'ok'}
+          label={device.simSwapped ? 'SIM swapped — marked LOST' : 'No swap detected'}
+        />
+        <Button
+          compact
+          tone="secondary"
+          style={{ alignSelf: 'flex-start' }}
+          title="Check SIM now"
+          onPress={onCheckSim}
+          disabled={busy}
+        />
+      </Card>
+
+      <Card tone={device.isLost ? 'danger' : undefined}>
+        <SectionTitle style={{ marginTop: 0 }}>Emergency</SectionTitle>
+        <Button
+          tone={device.isLost ? 'secondary' : 'danger'}
+          title={device.isLost ? 'Clear LOST flag' : '⚠  Mark LOST (emergency mode)'}
+          onPress={onToggleLost}
+          disabled={busy}
+        />
+        <Button
+          tone="secondary"
+          title="💬  SMS owner location"
+          onPress={onSmsOwner}
+          disabled={busy}
+        />
+      </Card>
+
+      <Card style={{ padding: 0, overflow: 'hidden' }}>
+        <DeviceMap markers={markers} />
+      </Card>
+
+      <SectionTitle style={{ marginTop: space.sm }}>History ({history.length})</SectionTitle>
     </View>
   );
-}
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 8 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 20, fontWeight: '700' },
-  sub: { color: '#555' },
-  error: { color: 'red' },
-  warn: { color: '#b45309', fontSize: 12, fontWeight: '600' },
-  row: { flexDirection: 'row', gap: 8 },
-  button: {
-    flex: 1,
-    backgroundColor: '#111',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-  },
-  stop: { backgroundColor: '#8B0000' },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  hint: { color: '#666', fontSize: 12 },
-  section: { fontWeight: '700', marginTop: 8 },
-  item: { paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#eee' },
-});
+  return (
+    <>
+      <Stack.Screen options={{ title: device.deviceName ?? 'Device' }} />
+      <Screen pad={false} edges={['bottom']} style={{ gap: 0 }}>
+        <FlatList
+        style={{ flex: 1 }}
+        data={history}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ paddingBottom: space.xl }}
+        ListHeaderComponent={header}
+        ListEmptyComponent={
+          <EmptyState
+            icon="📍"
+            title="No fixes yet"
+            hint="Tap “Send location now” above to record the first position."
+          />
+        }
+        renderItem={({ item, index }) => (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              paddingHorizontal: space.lg,
+              paddingVertical: 10,
+              borderBottomWidth: 1,
+              borderBottomColor: palette.border,
+            }}
+          >
+            <StatusDot tone={index === 0 ? 'accent' : 'neutral'} />
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  color: palette.text,
+                  fontSize: 13,
+                  fontWeight: index === 0 ? '700' : '500',
+                }}
+              >
+                {item.lat.toFixed(5)}, {item.lng.toFixed(5)}
+              </Text>
+              <Text style={{ color: palette.textDim, fontSize: 12 }}>
+                ±{item.accuracy == null ? '?' : `${Math.round(item.accuracy)} m`} • Battery{' '}
+                {item.battery ?? '?'}% • {fmtDateTime(item.timestamp)}
+              </Text>
+            </View>
+            {item.source === 'mesh' ? (
+              <Chip tone="info" label="mesh" />
+            ) : item.source === 'network fallback' ? (
+              <Chip tone="warn" label="network" />
+            ) : null}
+          </View>
+        )}
+        ListFooterComponent={
+          <View style={{ padding: space.lg, gap: space.md }}>
+            <SectionTitle>Device settings</SectionTitle>
+            <Card>
+              {editingName ? (
+                <>
+                  <TextField
+                    label="Device name"
+                    value={nameDraft}
+                    onChangeText={setNameDraft}
+                    autoFocus
+                  />
+                  <View style={{ flexDirection: 'row', gap: space.sm }}>
+                    <Button
+                      style={{ flex: 1 }}
+                      compact
+                      title="Save name"
+                      onPress={onSaveName}
+                      disabled={busy}
+                    />
+                    <Button
+                      style={{ flex: 1 }}
+                      compact
+                      tone="secondary"
+                      title="Cancel"
+                      onPress={() => setEditingName(false)}
+                      disabled={busy}
+                    />
+                  </View>
+                </>
+              ) : (
+                <Button
+                  tone="secondary"
+                  title="✎  Rename device"
+                  onPress={() => {
+                    setNameDraft(device.deviceName ?? '');
+                    setEditingName(true);
+                  }}
+                  disabled={busy}
+                />
+              )}
+              <Button
+                tone="dangerGhost"
+                title="Remove device"
+                onPress={confirmRemove}
+                disabled={busy}
+              />
+              <Text style={{ color: palette.textFaint, fontSize: 12 }}>
+                Removing deletes this device’s location history from your account. The phone itself
+                keeps working.
+              </Text>
+            </Card>
+          </View>
+        }
+      />
+      </Screen>
+    </>
+  );
+}

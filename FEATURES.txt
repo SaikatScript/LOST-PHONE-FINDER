@@ -84,10 +84,29 @@ OFFLINE MESH (Phase 4a + 4b)
     (Proven: cloud relay loop "Checked 1, decrypted 1". Radio test needs the
     4b build on 2 phones, Bluetooth on, ~10 m apart, stolen phone offline.)
 
+UI & ACCOUNT (Phase 5A)
+--------------------------------------------------------------------------------
+30. Dark-mode-first design system (src/theme.js + ThemeContext): dark default,
+    light switch in Settings (persisted); reusable Screen / Card / Chip /
+    Button / StatusDot / TextField / EmptyState primitives.
+31. Redesigned screens: login (hero + Forgot password), register, devices list
+    (status cards, settings button, verification banner), device dashboard
+    (latest-fix card with fresh/stale chip + source + battery, action buttons,
+    SIM card, emergency card, map card, history rows), fleet map, add-device,
+    offline mesh (themed), splash.
+32. Forgot Password flow (Firebase sendPasswordResetEmail).
+33. Email verification on signup + Resend from Settings / Devices banner.
+34. Settings screen: account info + verification state, Dark/Light toggle,
+    Privacy Policy + Terms of Service (in-app template), app version, log out.
+35. Rename device (inline; does not touch lastUpdate) and Remove device
+    (deletes the locations subcollection + device doc; keeps mesh key backup).
+
 NOT YET BUILT
 --------------------------------------------------------------------------------
-- Silent SMS sending, remote ring/lock/wipe, Cloud-Function owner push,
-  production Play Store release (Phase 5), battery/UX polish, security audit.
+- Phase 5B anti-theft hardening (device admin anti-uninstall, boot receiver,
+  foreground-service persistence), Phase 5C push + Remote Ring/Lock/Wipe,
+  Phase 5D secret SMS + geofencing + online E2E + Play Store release,
+  security audit + hosted legal pages. Full plan: PHASE5_BLUEPRINT.txt.
 
 ================================================================================
 END OF FEATURE LIST

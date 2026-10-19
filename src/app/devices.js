@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
-import { View, Text, FlatList, Pressable, StyleSheet, Alert } from 'react-native';
-import { Link, router } from 'expo-router';
+import { View, Text, FlatList, Pressable, Alert } from 'react-native';
+import { router } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { subscribeToDevices } from '../lib/devices';
+import { Screen, Card, Chip, Button, EmptyState } from '../components/ui';
+import { timeAgo } from '../lib/format';
+import { space } from '../theme';
 
 export default function Devices() {
-  const { user, logOut } = useAuth();
+  const { user, resendVerification } = useAuth();
+  const { palette } = useTheme();
   const [devices, setDevices] = useState([]);
   const [error, setError] = useState('');
 
@@ -22,76 +27,131 @@ export default function Devices() {
     return unsub;
   }, [user]);
 
-  const onLogout = async () => {
+  const onResend = async () => {
     try {
-      await logOut();
-      router.replace('/login');
+      await resendVerification();
+      Alert.alert('Verification email sent', 'Open the link in your inbox, then restart the app.');
     } catch (e) {
-      Alert.alert('Logout failed', e.message);
+      Alert.alert('Could not send', e.message);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>My Devices</Text>
-      <Text style={styles.sub}>{user?.email ?? ''}</Text>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+    <Screen pad={false} edges={['top', 'bottom']} style={{ gap: 0 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 12,
+          padding: space.lg,
+          paddingBottom: space.sm,
+        }}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 26, fontWeight: '800', color: palette.text }}>My Devices</Text>
+          <Text style={{ color: palette.textDim, fontSize: 13 }}>{user?.email ?? ''}</Text>
+        </View>
+        <Pressable
+          onPress={() => router.push('/settings')}
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            borderWidth: 1,
+            borderColor: palette.border,
+            backgroundColor: palette.card,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Text style={{ fontSize: 19, color: palette.text }}>⚙</Text>
+        </Pressable>
+      </View>
+
+      {!user?.emailVerified && (
+        <Card
+          style={{
+            marginHorizontal: space.lg,
+            marginBottom: space.sm,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+            paddingVertical: 10,
+          }}
+        >
+          <Chip tone="warn" dot label="Email not verified" />
+          <Pressable onPress={onResend}>
+            <Text style={{ color: palette.accent, fontWeight: '600', fontSize: 13 }}>Resend link</Text>
+          </Pressable>
+        </Card>
+      )}
+
+      {error ? (
+        <Text style={{ color: palette.danger, paddingHorizontal: space.lg }}>{error}</Text>
+      ) : null}
+
       <FlatList
+        style={{ flex: 1 }}
         data={devices}
         keyExtractor={(item) => item.id}
-        ListEmptyComponent={<Text>No devices yet. Add this phone below.</Text>}
+        contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: space.sm, gap: space.md }}
+        ListEmptyComponent={
+          <EmptyState
+            icon="📱"
+            title="No devices yet"
+            hint="Tap “Add this device” below to register this phone and start tracking."
+          />
+        }
         renderItem={({ item }) => (
-          <Link
-            href={{ pathname: '/device/[id]', params: { id: item.id } }}
-            style={styles.card}
+          <Pressable
+            onPress={() => router.push({ pathname: '/device/[id]', params: { id: item.id } })}
+            style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
           >
-            <Text style={styles.cardTitle}>{item.deviceName}</Text>
-            <Text>{item.deviceModel}</Text>
-            <Text>
-              {item.isLost ? 'LOST' : 'OK'} • {item.simSwapped ? 'SIM swapped' : 'SIM OK'}
-            </Text>
-          </Link>
+            <Card>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text
+                  style={{ flex: 1, color: palette.text, fontSize: 17, fontWeight: '700' }}
+                  numberOfLines={1}
+                >
+                  {item.deviceName}
+                </Text>
+                <Chip dot tone={item.isLost ? 'bad' : 'ok'} label={item.isLost ? 'LOST' : 'OK'} />
+              </View>
+              <Text style={{ color: palette.textDim, fontSize: 13 }} numberOfLines={1}>
+                {item.deviceModel}
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <Chip label={`🔋 ${item.lastBattery ?? '?'}%`} />
+                {item.simSwapped ? <Chip tone="warn" label="SIM swapped" /> : null}
+                {item.lastLocationSource === 'mesh' ? <Chip tone="info" label="via mesh" /> : null}
+                {item.lastLocationAt ? (
+                  <Text style={{ color: palette.textFaint, fontSize: 12 }}>
+                    {timeAgo(item.lastLocationAt)}
+                  </Text>
+                ) : null}
+              </View>
+            </Card>
+          </Pressable>
         )}
       />
-      <Link href="/map" style={styles.buttonSecondary}>
-        <Text style={styles.buttonSecondaryText}>Fleet map</Text>
-      </Link>
-      <Link href="/mesh" style={styles.buttonSecondary}>
-        <Text style={styles.buttonSecondaryText}>Offline mesh</Text>
-      </Link>
-      <Link href="/add-device" style={styles.button}>
-        <Text style={styles.buttonText}>Add this device</Text>
-      </Link>
-      <Pressable onPress={onLogout}>
-        <Text style={styles.link}>Log out</Text>
-      </Pressable>
-    </View>
+
+      <View style={{ padding: space.lg, paddingTop: space.sm, gap: space.sm }}>
+        <View style={{ flexDirection: 'row', gap: space.sm }}>
+          <Button
+            style={{ flex: 1 }}
+            tone="secondary"
+            title="Fleet map"
+            onPress={() => router.push('/map')}
+          />
+          <Button
+            style={{ flex: 1 }}
+            tone="secondary"
+            title="Offline mesh"
+            onPress={() => router.push('/mesh')}
+          />
+        </View>
+        <Button title="＋  Add this device" onPress={() => router.push('/add-device')} />
+      </View>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 8 },
-  title: { fontSize: 22, fontWeight: '700' },
-  sub: { color: '#666' },
-  error: { color: 'red' },
-  card: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, marginVertical: 6 },
-  cardTitle: { fontWeight: '700', fontSize: 16 },
-  button: {
-    backgroundColor: '#111',
-    borderRadius: 8,
-    padding: 14,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  buttonSecondary: {
-    borderWidth: 1,
-    borderColor: '#111',
-    borderRadius: 8,
-    padding: 14,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  buttonSecondaryText: { color: '#111', fontWeight: '600' },
-  link: { color: '#0B5FFF', textAlign: 'center', marginTop: 12 },
-});

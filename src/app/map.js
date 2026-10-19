@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { subscribeToDevices } from '../lib/devices';
 import DeviceMap from '../components/DeviceMap';
+import { Screen, EmptyState } from '../components/ui';
+import { space } from '../theme';
 
 export default function MapOverview() {
   const { user } = useAuth();
+  const { palette } = useTheme();
   const [devices, setDevices] = useState([]);
   const [error, setError] = useState('');
 
@@ -36,25 +40,27 @@ export default function MapOverview() {
     }));
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Fleet map</Text>
-      <Text style={styles.hint}>
-        Satellite by default — tap the layers button (top-right) for Streets or Terrain, and the
-        ◎ button to re-centre on the latest fix.
-      </Text>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+    <Screen pad={false} edges={['bottom']} style={{ gap: space.sm }}>
+      <View style={{ padding: space.lg, paddingBottom: 0, gap: 4 }}>
+        <Text style={{ fontSize: 24, fontWeight: '800', color: palette.text }}>Fleet map</Text>
+        <Text style={{ color: palette.textDim, fontSize: 12 }}>
+          Satellite by default — layers button (top-right) for Streets/Terrain, ◎ to re-centre.
+        </Text>
+      </View>
+      {error ? (
+        <Text style={{ color: palette.danger, paddingHorizontal: space.lg }}>{error}</Text>
+      ) : null}
       {markers.length === 0 ? (
-        <Text>No devices with a location yet. Open a device and tap “Send location now”.</Text>
+        <EmptyState
+          icon="🗺️"
+          title="No locations yet"
+          hint="Open a device and tap “Send location now” to place it on the map."
+        />
       ) : (
-        <DeviceMap markers={markers} />
+        <View style={{ flex: 1 }}>
+          <DeviceMap markers={markers} />
+        </View>
       )}
-    </View>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 8 },
-  title: { fontSize: 20, fontWeight: '700' },
-  hint: { fontSize: 12, color: '#666' },
-  error: { color: 'red' },
-});

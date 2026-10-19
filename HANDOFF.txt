@@ -37,8 +37,14 @@ everything needed to continue. No secrets are stored in this repo, ever.
 
 3. NOT DONE (in order)
 --------------------------------------------------------------------------------
-  a. Phase 5: battery/UX polish, multi-OEM test, security audit, Play release,
-     Cloud-Function owner push. Follow-ups: silent SMS, Google Maps key, ring/lock/wipe.
+  a. Phase 5A BUILT (19 Oct, awaiting on-phone check): dark-first UI redesign +
+     Settings + Forgot password + verification + Rename/Remove device. JS-only
+     (no new APK needed) - reload the app from Metro to see it.
+  b. Phase 5B: anti-uninstall device admin, boot receiver, foreground-service
+     persistence + OEM battery whitelist.
+  c. Phase 5C: FCM push + Cloud Functions (needs Blaze) + Ring/Lock/Wipe.
+  d. Phase 5D: secret SMS, geofencing, online E2E, Play release.
+     See PHASE5_BLUEPRINT.txt for the full plan.
 
 4. NEW-MACHINE SETUP (nothing below is in the repo — recreate it)
 --------------------------------------------------------------------------------

@@ -264,12 +264,53 @@ lost if the process dies before it syncs. During testing, verify writes with
 the local queue AND the REST API, not just the app's own (cache-fed) UI.
 
 --------------------------------------------------------------------------------
+PHASE 5A - UI REDESIGN & ACCOUNT POLISH (built 19 Oct, awaiting phone check)
+--------------------------------------------------------------------------------
+Master plan for the remaining phases: see PHASE5_BLUEPRINT.txt (Sprints 1-4).
+No MUSE SPARK design asset was available, so the dark-first design system was
+designed in-repo; swap tokens in src/theme.js if a reference design arrives.
+
+Built (no new native modules - JS only, so the existing dev build only needs a
+Metro reload, NO new APK):
+- src/theme.js: dark + light palettes, radius/space tokens.
+- src/context/ThemeContext.js: mode persists in AsyncStorage (key
+  lpf.themeMode), dark is the default.
+- src/components/ui.js: Screen, Card, Chip, StatusDot, Button (tones:
+  primary/secondary/danger/dangerGhost/ghost), TextField, SectionTitle,
+  EmptyState.
+- src/lib/format.js: toMillis / timeAgo / fmtDateTime.
+- Screens redesigned: login (hero), register, devices (status cards + settings
+  entry + verification banner), device/[id] (dashboard: latest-fix card with
+  fresh/stale chip, actions, SIM card, emergency card, map card, history rows
+  with source chips, Device-settings card with Rename + Remove), map, add-device,
+  mesh (themed; logic untouched), index splash. _layout themed Stack + explicit
+  SafeAreaProvider at the root.
+- Account: Forgot Password screen (sendPasswordResetEmail); email verification
+  on signup + "Resend verification email" in Settings and on the Devices
+  banner; Settings screen (account, Dark/Light toggle, Privacy Policy, Terms of
+  Service, version, log out).
+- Rename device: inline editor on the dashboard; writes deviceName only (does
+  NOT touch lastUpdate - that field means "last seen").
+- Remove device: deletes the locations subcollection in 300-doc batches, then
+  the device doc. deviceKeys/{deviceId} is deliberately KEPT so relays sealed
+  by that phone can still be decrypted if re-added.
+- Privacy Policy + Terms screens: in-app TEMPLATE text (marked as such) -
+  needs legal review + hosted URLs before the Play Store submission (Phase 5D).
+- lint exit 0 + tsc --noEmit exit 0.
+
+--------------------------------------------------------------------------------
 PENDING
 --------------------------------------------------------------------------------
-- Phase 5: battery profiling, UX polish, multi-OEM testing, security audit,
-  production build + Play Store, Cloud Functions owner push (replaces local-only).
-- Follow-ups: silent-SMS native module, Google Maps upgrade (needs Cloud billing),
-  remote wipe/lock/ring commands (blueprint §5.7 buttons).
+- Phase 5A verification on both phones: dark UI, forgot password, email
+  verification, rename/remove device, Settings toggle.
+- Phase 5B (next sprint): anti-uninstall device admin, BOOT_COMPLETED receiver,
+  foreground-service persistence + OEM battery whitelist prompt.
+- Phase 5C: FCM push + Cloud Functions (needs Blaze), Ring/Lock/Wipe.
+- Phase 5D: secret SMS, geofencing, E2E encryption for online locations,
+  Play release + hosted legal pages.
+- Phase 5: battery profiling, multi-OEM testing, security audit,
+  production build + Play Store.
+- Follow-ups: silent-SMS native module, Google Maps upgrade (needs Cloud billing).
 - Ops notes: paste updated firestore.rules to console (relays/deviceKeys);
   dev server: npx expo start --clear (same Wi-Fi); install APKs via adb.
 

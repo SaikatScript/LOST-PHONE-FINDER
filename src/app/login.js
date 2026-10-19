@@ -1,11 +1,14 @@
 import { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
-import { Link, router } from 'expo-router';
+import { View, Text, Pressable, Alert } from 'react-native';
+import { router } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
+import { Screen, Button, TextField, Card } from '../components/ui';
 import { isFirebaseConfigured } from '../lib/firebase';
 
 export default function Login() {
   const { signIn } = useAuth();
+  const { palette } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -24,45 +27,62 @@ export default function Login() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Lost Phone Finder</Text>
-      {!isFirebaseConfigured && (
-        <Text style={styles.warn}>
-          Firebase keys not set. Copy .env.example to .env and add your web-app config, then
-          restart with `npx expo start --clear`.
+    <Screen scroll centered edges={['top', 'bottom']}>
+      <View style={{ alignItems: 'center', gap: 6, marginBottom: 8 }}>
+        <View
+          style={{
+            width: 64,
+            height: 64,
+            borderRadius: 32,
+            backgroundColor: palette.accentSoft,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Text style={{ fontSize: 30 }}>🛰️</Text>
+        </View>
+        <Text style={{ fontSize: 26, fontWeight: '800', color: palette.text }}>
+          Lost Phone Finder
         </Text>
+        <Text style={{ color: palette.textDim, fontSize: 14 }}>
+          Find your phone — even offline.
+        </Text>
+      </View>
+
+      {!isFirebaseConfigured && (
+        <Card tone="warning">
+          <Text style={{ color: palette.warning, fontSize: 13 }}>
+            Firebase keys not set. Copy .env.example to .env and add your web-app config, then
+            restart with `npx expo start --clear`.
+          </Text>
+        </Card>
       )}
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
+
+      <TextField
+        label="Email"
+        placeholder="you@example.com"
         autoCapitalize="none"
         keyboardType="email-address"
         value={email}
         onChangeText={setEmail}
       />
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
+      <TextField
+        label="Password"
+        placeholder="Your password"
         secureTextEntry
         value={password}
         onChangeText={setPassword}
       />
-      <Pressable style={styles.button} onPress={onLogin} disabled={busy}>
-        <Text style={styles.buttonText}>{busy ? 'Logging in…' : 'Log in'}</Text>
-      </Pressable>
-      <Link href="/register" style={styles.link}>
-        No account? Create one
-      </Link>
-    </View>
+      <Button title="Log in" onPress={onLogin} busy={busy} disabled={busy} />
+
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 4 }}>
+        <Pressable onPress={() => router.push('/forgot-password')}>
+          <Text style={{ color: palette.accent, fontWeight: '600' }}>Forgot password?</Text>
+        </Pressable>
+        <Pressable onPress={() => router.push('/register')}>
+          <Text style={{ color: palette.accent, fontWeight: '600' }}>Create account</Text>
+        </Pressable>
+      </View>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, justifyContent: 'center', gap: 12 },
-  title: { fontSize: 24, fontWeight: '700', marginBottom: 8 },
-  warn: { backgroundColor: '#FFF7DB', padding: 10, borderRadius: 8 },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12 },
-  button: { backgroundColor: '#111', borderRadius: 8, padding: 14, alignItems: 'center' },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  link: { color: '#0B5FFF', marginTop: 8, textAlign: 'center' },
-});

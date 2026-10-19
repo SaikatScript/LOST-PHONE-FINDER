@@ -9,6 +9,9 @@ import {
   serverTimestamp,
   query,
   orderBy,
+  limit,
+  writeBatch,
+  deleteDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -74,4 +77,31 @@ export async function updateDevice(userId, deviceId, patch) {
     { ...patch, lastUpdate: serverTimestamp() },
     { merge: true }
   );
+}
+
+// Phase 5A: rename without touching lastUpdate (that field means "last seen" —
+// a rename must not reshuffle the list or fake a fresh check-in).
+export async function renameDevice(userId, deviceId, name) {
+  await setDoc(
+    doc(db, 'users', userId, 'devices', deviceId),
+    { deviceName: name },
+    { merge: true }
+  );
+}
+
+// Phase 5A: remove a device + its location history from the account. Firestore
+// has no recursive delete on the client, so locations are removed in batches
+// of 300 first, then the device doc itself. Mesh key backups (deviceKeys) are
+// deliberately kept: the physical phone may still beacon, and the owner may
+// re-add it and keep decrypting relays.
+export async function removeDevice(userId, deviceId) {
+  const locRef = collection(db, 'users', userId, 'devices', deviceId, 'locations');
+  for (;;) {
+    const snap = await getDocs(query(locRef, limit(300)));
+    if (snap.empty) break;
+    const batch = writeBatch(db);
+    for (const d of snap.docs) batch.delete(d.ref);
+    await batch.commit();
+  }
+  await deleteDoc(doc(db, 'users', userId, 'devices', deviceId));
 }
