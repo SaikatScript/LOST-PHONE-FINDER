@@ -17,10 +17,12 @@ export default function Register() {
     if (!email || !password) return Alert.alert('Missing info', 'Enter email and password.');
     setBusy(true);
     try {
-      await signUp(email.trim(), password, phone.trim());
+      const { verificationSent } = await signUp(email.trim(), password, phone.trim());
       Alert.alert(
         'Account created',
-        'We sent a verification email — check your inbox. You can verify later from Settings.'
+        verificationSent
+          ? 'We sent a verification email — check your inbox (and spam). Tap the link, then come back to the app; the status updates automatically.'
+          : 'Account created, but the verification email could not be sent. Open Settings and tap "Resend verification email".'
       );
       router.replace('/devices');
     } catch (e) {

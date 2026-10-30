@@ -37,6 +37,7 @@ yarn-error.*
 adb-tools/
 *.apk
 expoidpass.txt
+.firebase/
 
 # typescript
 *.tsbuildinfo

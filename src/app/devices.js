@@ -56,7 +56,10 @@ export default function Devices() {
   const onResend = async () => {
     try {
       await resendVerification();
-      Alert.alert('Verification email sent', 'Open the link in your inbox, then restart the app.');
+      Alert.alert(
+        'Verification email sent',
+        'Open the link in your inbox (check spam too), then return to the app — verification is detected automatically.'
+      );
     } catch (e) {
       Alert.alert('Could not send', e.message);
     }

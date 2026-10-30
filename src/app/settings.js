@@ -9,13 +9,18 @@ import { radius } from '../theme';
 
 // Phase 5A settings: profile, appearance (dark/light), legal links, sign out.
 export default function Settings() {
-  const { user, logOut, resendVerification } = useAuth();
+  const { user, logOut, resendVerification, refreshUser } = useAuth();
   const { mode, palette, setMode } = useTheme();
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!user) router.replace('/login');
   }, [user]);
+
+  // Reconcile emailVerified with the server when this screen opens.
+  useEffect(() => {
+    refreshUser().catch(() => {});
+  }, [refreshUser]);
 
   const onLogout = async () => {
     setBusy(true);
@@ -33,9 +38,31 @@ export default function Settings() {
     setBusy(true);
     try {
       await resendVerification();
-      Alert.alert('Verification email sent', 'Open the link in your inbox, then restart the app.');
+      Alert.alert(
+        'Verification email sent',
+        'Open the link in your inbox (check spam too), then return to the app — verification is detected automatically.'
+      );
     } catch (e) {
       Alert.alert('Could not send', e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onCheckVerified = async () => {
+    setBusy(true);
+    try {
+      const fresh = await refreshUser();
+      if (fresh?.emailVerified) {
+        Alert.alert('Email verified', 'Your email address is confirmed.');
+      } else {
+        Alert.alert(
+          'Not verified yet',
+          'Open the verification link in your inbox first, then tap "I have verified" again.'
+        );
+      }
+    } catch (e) {
+      Alert.alert('Could not check', e.message);
     } finally {
       setBusy(false);
     }
@@ -59,6 +86,13 @@ export default function Settings() {
               tone="secondary"
               title="Resend verification email"
               onPress={onResend}
+              disabled={busy}
+            />
+            <Button
+              compact
+              tone="ghost"
+              title="I have verified — refresh"
+              onPress={onCheckVerified}
               disabled={busy}
             />
           </View>
