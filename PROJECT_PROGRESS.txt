@@ -331,12 +331,39 @@ Metro reload, NO new APK):
   changes need a FULL app reload (fast refresh only updates the marker data).
 
 --------------------------------------------------------------------------------
+PHASE 5B HARDENING (device admin + reboot auto-start + battery whitelist)
+--------------------------------------------------------------------------------
+NEW: modules/device-guard (local Expo module, Android only; autolinked from
+modules/* like mesh-advertiser).
+- DeviceAdminReceiver + res/xml/device_admin.xml (force-lock policy): a thief
+  must switch device admin OFF before the app can be uninstalled. Deactivation
+  shows a warning (onDisableRequested). JS API: isDeviceAdminActive /
+  requestDeviceAdmin / removeDeviceAdmin.
+- BootReceiver (BOOT_COMPLETED, QUICKBOOT_POWERON, MY_PACKAGE_REPLACED) starts
+  a HeadlessJsTaskService ("lostphone-boot"). index.js registers the headless
+  task; tracking.resumeProtectionAfterBoot() re-arms the foreground location
+  service, sends one immediate fix (offline -> sealed + Bluetooth beacon),
+  and runs one mesh agent pass. No UI, no user action.
+  WHY: expo-location does NOT restore background updates after a reboot.
+- Battery whitelist API: isIgnoringBatteryOptimizations /
+  requestIgnoreBatteryOptimizations / openBatterySettings +
+  openAutoStartSettings (MIUI, ColorOS/realme, OriginOS, EMUI, One UI, ASUS).
+  NOTE: REQUEST_IGNORE_BATTERY_OPTIMIZATIONS is Play-policy sensitive; the
+  plain battery-settings screen is the fallback if review rejects the dialog.
+- UI: device dashboard "Protection setup" card - device admin state + Activate /
+  Turn off, battery state + Allow background / Auto-start settings. On old dev
+  binaries without the module it shows a "rebuild the dev app" note instead of
+  crashing (module calls fail soft).
+- Native rebuild required to test: npx expo prebuild -p android && npx expo
+  run:android (or an EAS development build). JS reloads alone cannot add native
+  code.
+
+--------------------------------------------------------------------------------
 PENDING
 --------------------------------------------------------------------------------
-- Phase 5A verification on both phones: dark UI, forgot password, email
-  verification, rename/remove device, Settings toggle.
-- Phase 5B (next sprint): anti-uninstall device admin, BOOT_COMPLETED receiver,
-  foreground-service persistence + OEM battery whitelist prompt.
+- Phase 5B verification on hardware (Samsung A50 + OPPO): activate device admin,
+  confirm uninstall is gated, reboot -> tracking + beacon resume, battery
+  whitelist prompt, MY_PACKAGE_REPLACED broadcast test.
 - Phase 5C: FCM push + Cloud Functions (needs Blaze), Ring/Lock/Wipe.
 - Phase 5D: secret SMS, geofencing, E2E encryption for online locations,
   Play release + hosted legal pages.

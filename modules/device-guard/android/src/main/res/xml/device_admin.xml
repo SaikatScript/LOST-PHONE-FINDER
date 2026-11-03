@@ -1,0 +1,6 @@
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-policies>
+    <!-- Lock the screen remotely. Kept minimal on purpose: no wipe here. -->
+    <force-lock />
+  </uses-policies>
+</device-admin>

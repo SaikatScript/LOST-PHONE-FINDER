@@ -198,6 +198,23 @@ export async function pushCurrentLocationNow(userId, deviceId) {
   return { lat: best.pos.coords.latitude, lng: best.pos.coords.longitude, battery };
 }
 
+// One source of truth for the background location task options (also used by
+// the boot receiver when it re-arms tracking after a reboot).
+function backgroundTaskOptions() {
+  return {
+    // High = GPS. Balanced was giving Wi-Fi/cell fixes (±600 m here), which
+    // are not good enough to walk to a stolen phone.
+    accuracy: Location.Accuracy.High,
+    timeInterval: 10 * 60 * 1000,
+    distanceInterval: 25,
+    showsBackgroundLocationIndicator: false,
+    foregroundService: {
+      notificationTitle: 'Lost Phone Finder',
+      notificationBody: 'Tracking this device location for anti-theft recovery.',
+    },
+  };
+}
+
 export async function startTracking(userId, deviceId) {
   if (Platform.OS === 'web') {
     throw new Error('Background tracking is not supported on web.');
@@ -217,18 +234,7 @@ export async function startTracking(userId, deviceId) {
   try {
     const started = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
     if (started) await Location.stopLocationUpdatesAsync(LOCATION_TASK);
-    await Location.startLocationUpdatesAsync(LOCATION_TASK, {
-      // High = GPS. Balanced was giving Wi-Fi/cell fixes (±600 m here), which
-      // are not good enough to walk to a stolen phone.
-      accuracy: Location.Accuracy.High,
-      timeInterval: 10 * 60 * 1000,
-      distanceInterval: 25,
-      showsBackgroundLocationIndicator: false,
-      foregroundService: {
-        notificationTitle: 'Lost Phone Finder',
-        notificationBody: 'Tracking this device location for anti-theft recovery.',
-      },
-    });
+    await Location.startLocationUpdatesAsync(LOCATION_TASK, backgroundTaskOptions());
     return { mode: 'background' };
   } catch {
     // Fallback (e.g. Expo Go Android where TaskManager is unavailable):
@@ -274,3 +280,32 @@ export async function isTracking() {
     return foregroundSub !== null;
   }
 }
+
+// Phase 5B: called by the native BootReceiver through headless JS after a
+// reboot or an app update. Re-arms the foreground location service, sends one
+// immediate fix (which also seals + starts the Bluetooth broadcast when the
+// phone has no internet) and runs one mesh agent pass — no UI, no user action.
+export async function resumeProtectionAfterBoot() {
+  const tracked = await readTrackedDevice();
+  if (!tracked?.userId || !tracked?.deviceId) return { resumed: false };
+  try {
+    const running = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
+    if (!running) {
+      await Location.startLocationUpdatesAsync(LOCATION_TASK, backgroundTaskOptions());
+    }
+  } catch {
+    // permissions revoked — the next app launch asks again
+    return { resumed: false };
+  }
+  try {
+    await pushCurrentLocationNow(tracked.userId, tracked.deviceId);
+  } catch {
+    // offline: pushCurrentLocationNow already sealed + queued + broadcast it
+  }
+  try {
+    const { backgroundAgentPass } = require('./meshAuto');
+    await backgroundAgentPass();
+  } catch {}
+  return { resumed: true };
+}
+

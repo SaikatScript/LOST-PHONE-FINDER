@@ -143,6 +143,17 @@ everything needed to continue. No secrets are stored in this repo, ever.
   offline test): toggle Wireless debugging OFF/ON afterwards, then
   `adb mdns services` -> `adb connect <connect-port>`; a pairing code is only
   needed if the _adb-tls-pairing service appears.
+- Phase 5B native module lives in modules/device-guard (autolinked from
+  modules/*). Old dev binaries do NOT contain it: the dashboard shows a
+  "rebuild the dev app" note and every call fails soft. Rebuild with
+  npx expo prebuild -p android && npx expo run:android (or EAS dev build).
+- Test the reboot path without rebooting:
+  adb shell am broadcast -a android.intent.action.MY_PACKAGE_REPLACED -p com.lostphonefinder.app
+  then `adb logcat -s DeviceGuard` -> "wake after ..." + one mesh-auto pass.
+  A real BOOT_COMPLETED receiver starts a HeadlessJsTaskService; in dev builds
+  it needs Metro reachable (production bundles are self-contained).
+- Device admin gates uninstall: remove it from the dashboard ("Turn off device
+  admin") before uninstalling a test build, or Android refuses.
 
 ================================================================================
 END OF HANDOFF

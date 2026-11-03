@@ -11,6 +11,15 @@ import {
   pushCurrentLocationNow,
   isTracking,
 } from '../../lib/tracking';
+import {
+  isDeviceGuardAvailable,
+  isDeviceAdminActive,
+  requestDeviceAdmin,
+  removeDeviceAdmin,
+  isIgnoringBatteryOptimizations,
+  requestIgnoreBatteryOptimizations,
+  openAutoStartSettings,
+} from '../../lib/deviceGuard';
 import { fmtDateTime, timeAgo, toMillis } from '../../lib/format';
 import DeviceMap from '../../components/DeviceMap';
 import {
@@ -36,6 +45,10 @@ export default function DeviceDetail() {
   const [error, setError] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
+  // Phase 5B hardening: native protection state (device admin / battery).
+  const [adminOn, setAdminOn] = useState(() => isDeviceAdminActive());
+  const [batteryOk, setBatteryOk] = useState(() => isIgnoringBatteryOptimizations());
+  const [guardBusy, setGuardBusy] = useState(false);
   // Clock for "this fix is N minutes old". Kept in state (updated by an effect)
   // so the render body never calls Date.now() directly.
   const [now, setNow] = useState(() => Date.now());
@@ -113,6 +126,19 @@ export default function DeviceDetail() {
     return () => sub.remove();
   }, [doAutoRefresh]);
 
+  // Phase 5B: device admin / battery state lives in Android, and the system
+  // dialogs change it outside React — re-read it whenever we return to the app.
+  // (The initial values come from the useState initializers above.)
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') {
+        setAdminOn(isDeviceAdminActive());
+        setBatteryOk(isIgnoringBatteryOptimizations());
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   const guard = () => {
     if (!user) {
       router.replace('/login');
@@ -168,6 +194,46 @@ export default function DeviceDetail() {
       Alert.alert('Stop failed', e.message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Phase 5B: device admin on/off (anti-uninstall) + battery whitelist.
+  const onToggleAdmin = () => {
+    if (adminOn) {
+      Alert.alert(
+        'Turn off device admin?',
+        'A thief could then uninstall the app in seconds. Only turn this off if you are handing the phone to someone.',
+        [
+          { text: 'Keep protection', style: 'cancel' },
+          {
+            text: 'Turn off',
+            style: 'destructive',
+            onPress: () => {
+              removeDeviceAdmin();
+              setAdminOn(isDeviceAdminActive());
+            },
+          },
+        ]
+      );
+      return;
+    }
+    setGuardBusy(true);
+    requestDeviceAdmin()
+      .then(() => setAdminOn(isDeviceAdminActive()))
+      .finally(() => setGuardBusy(false));
+  };
+
+  const onFixBattery = async () => {
+    setGuardBusy(true);
+    try {
+      if (!batteryOk) {
+        await requestIgnoreBatteryOptimizations();
+        setBatteryOk(isIgnoringBatteryOptimizations());
+      } else {
+        await openAutoStartSettings();
+      }
+    } finally {
+      setGuardBusy(false);
     }
   };
 
@@ -422,6 +488,75 @@ export default function DeviceDetail() {
             Emergency mode is ON — this device is flagged LOST on your account.
           </Text>
         ) : null}
+      </Card>
+
+      <SectionTitle style={{ marginTop: space.sm }}>Protection setup</SectionTitle>
+      <Card>
+        {isDeviceGuardAvailable() ? (
+          <>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+              <StatusDot tone={adminOn ? 'ok' : 'warn'} />
+              <Text style={{ color: palette.text, flex: 1 }}>Device admin</Text>
+              <Chip dot tone={adminOn ? 'ok' : 'warn'} label={adminOn ? 'Active' : 'Off'} />
+            </View>
+            <Text style={{ color: palette.textDim, fontSize: 12 }}>
+              {adminOn
+                ? 'Uninstalling now requires switching device admin off first.'
+                : 'Stops a thief from uninstalling the app without extra steps.'}
+            </Text>
+            <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
+              <Button
+                compact
+                tone={adminOn ? 'secondary' : 'primary'}
+                title={adminOn ? 'Turn off device admin' : 'Activate device admin'}
+                onPress={onToggleAdmin}
+                disabled={guardBusy}
+              />
+            </View>
+
+            <View
+              style={{ height: 1, backgroundColor: palette.border, marginVertical: space.xs }}
+            />
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+              <StatusDot tone={batteryOk ? 'ok' : 'warn'} />
+              <Text style={{ color: palette.text, flex: 1 }}>Background reliability</Text>
+              <Chip
+                dot
+                tone={batteryOk ? 'ok' : 'warn'}
+                label={batteryOk ? 'Unrestricted' : 'Optimized'}
+              />
+            </View>
+            <Text style={{ color: palette.textDim, fontSize: 12 }}>
+              {batteryOk
+                ? 'Android is not restricting the background tracking service.'
+                : 'Some phones (Xiaomi, OPPO, vivo) kill tracking when optimized. Allow unrestricted battery.'}
+            </Text>
+            <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
+              <Button
+                compact
+                tone={batteryOk ? 'secondary' : 'primary'}
+                title={batteryOk ? 'Battery settings' : 'Allow background'}
+                onPress={onFixBattery}
+                disabled={guardBusy}
+              />
+              <Button
+                compact
+                tone="secondary"
+                title="Auto-start settings"
+                onPress={() => {
+                  openAutoStartSettings();
+                }}
+                disabled={guardBusy}
+              />
+            </View>
+          </>
+        ) : (
+          <Text style={{ color: palette.textDim, fontSize: 12 }}>
+            This build does not include the native protection module yet. Rebuild the dev app to
+            enable device admin, reboot auto-start and battery setup.
+          </Text>
+        )}
       </Card>
 
       <SectionTitle style={{ marginTop: space.sm }}>Device settings</SectionTitle>
