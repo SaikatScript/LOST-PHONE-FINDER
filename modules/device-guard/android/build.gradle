@@ -16,3 +16,9 @@ android {
     abortOnError false
   }
 }
+
+dependencies {
+  // BootReceiver -> HeadlessJsTaskService lives in React Native. Local Expo
+  // modules only get expo-modules-core as compileOnly, so add RN explicitly.
+  implementation 'com.facebook.react:react-android'
+}

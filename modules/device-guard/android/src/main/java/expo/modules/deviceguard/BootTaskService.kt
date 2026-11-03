@@ -12,7 +12,7 @@ class BootTaskService : HeadlessJsTaskService() {
     return HeadlessJsTaskConfig(
       "lostphone-boot",
       Arguments.createMap(),
-      60_000L, // keep the JS alive long enough for GPS + one upload attempt
+      120_000L, // GPS fix + upload attempt + beacon start can take ~45 s
       true // allowed while the app is in the foreground too
     )
   }
