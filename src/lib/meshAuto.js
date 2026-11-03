@@ -159,6 +159,7 @@ export async function beaconOfflineFix({ userId, deviceId, lat, lng, accuracy = 
       ownerPubB64: encodeBase64(kp.publicKey),
     });
     await enqueuePacket(packet);
+    console.log('[mesh-auto] sealed + queued', packet.packetId);
     setStatus({ queuedOwn: status.queuedOwn + 1, note: '' });
     await startBeaconInternal(packet);
     return true;
@@ -184,8 +185,14 @@ async function tick() {
     let queued = [];
     try {
       queued = await listPackets();
-    } catch {
+    } catch (e) {
+      // Never swallow this: a queue read failure used to look exactly like an
+      // empty queue (no upload attempt, no log, UI showing 0).
+      console.log('[mesh-auto] queue read failed:', e?.message ?? String(e));
       queued = [];
+    }
+    if (queued.length) {
+      console.log('[mesh-auto] tick — queue', queued.length, 'attempted', attemptedIds.size);
     }
 
     let sent = 0;
@@ -285,6 +292,7 @@ async function runScanCycle(force = false) {
       // the server acknowledges the write (offline scans stay queued safely).
       try {
         await enqueuePacket(packet);
+        console.log('[mesh-auto] heard + queued', packet.packetId);
       } catch {}
     }, SCAN_WINDOW_MS);
     setStatus({

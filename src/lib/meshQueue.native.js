@@ -10,11 +10,12 @@ let sqliteFailed = false;
 const mem = new Map();
 
 async function conn() {
-  if (db || sqliteFailed) return db;
+  if (db) return db;
+  if (sqliteFailed) return null;
   try {
     const SQLite = require('expo-sqlite');
-    db = await SQLite.openDatabaseAsync(DB_NAME);
-    await db.execAsync(
+    const opened = await SQLite.openDatabaseAsync(DB_NAME);
+    await opened.execAsync(
       `CREATE TABLE IF NOT EXISTS mesh_packets (
         id INTEGER PRIMARY KEY NOT NULL,
         packet_id TEXT UNIQUE NOT NULL,
@@ -25,9 +26,11 @@ async function conn() {
         expires_at INTEGER NOT NULL
       );`
     );
+    // Only publish the handle once the schema is ready: a half-initialised
+    // handle used to be able to null out a perfectly good connection.
+    db = opened;
   } catch {
-    sqliteFailed = true;
-    db = null;
+    if (!db) sqliteFailed = true;
   }
   return db;
 }
@@ -64,7 +67,19 @@ export async function listPackets() {
   const rows = await c.getAllAsync(
     'SELECT packet_id AS packetId, owner_id AS ownerId, payload, hops, created_at AS createdAt FROM mesh_packets ORDER BY created_at DESC'
   );
-  return rows.map((r) => ({ ...JSON.parse(r.payload), storedAt: r.createdAt }));
+  const out = [];
+  for (const r of rows) {
+    try {
+      out.push({ ...JSON.parse(r.payload), storedAt: r.createdAt });
+    } catch {
+      // Corrupt or legacy row: drop it instead of letting one bad payload hide
+      // the whole queue from the agent and the UI.
+      try {
+        await c.runAsync('DELETE FROM mesh_packets WHERE packet_id = ?', r.packetId);
+      } catch {}
+    }
+  }
+  return out;
 }
 
 export async function removePacket(packetId) {

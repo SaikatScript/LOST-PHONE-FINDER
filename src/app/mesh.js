@@ -71,7 +71,12 @@ export default function Mesh() {
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh().catch(() => {});
-    return subscribeToDevices(
+    // The queue changes from the background agent too, so poll it while this
+    // screen is open (status events can lag one 60 s tick behind reality).
+    const timer = setInterval(() => {
+      refresh().catch(() => {});
+    }, 15 * 1000);
+    const unsub = subscribeToDevices(
       user.uid,
       (ds) => {
         setDevices(ds);
@@ -79,6 +84,10 @@ export default function Mesh() {
       },
       (e) => setInfo(e.message)
     );
+    return () => {
+      clearInterval(timer);
+      unsub();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -321,6 +330,9 @@ export default function Mesh() {
   }
 
   const st = agent ?? {};
+  // Live count: the agent status updates every tick, the list refreshes every
+  // 15 s — show whichever is higher so a just-queued fix never reads as "0".
+  const queuedCount = Math.max(queue.length, st.queuedTotal ?? 0, st.queuedOwn ?? 0);
   // One plain-language headline for whatever the agent is doing right now.
   let hero = { tone: 'ok', title: 'Automatic protection is on', text: 'Nothing to do — fixes upload and sync by themselves.' };
   if (st.beaconOn) {
@@ -360,7 +372,7 @@ export default function Mesh() {
         </View>
         <Text style={{ color: palette.textDim, fontSize: 13, lineHeight: 19 }}>{hero.text}</Text>
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-          <Chip label={`${st.queuedTotal ?? queue.length} in queue`} />
+          <Chip label={`${queuedCount} in queue`} />
           {st.beaconOn ? <Chip tone="warn" dot label="broadcasting" /> : null}
           {st.scanning ? <Chip tone="info" dot label="scanning" /> : null}
           {st.online === true ? <Chip tone="ok" dot label="internet ok" /> : null}
@@ -376,7 +388,7 @@ export default function Mesh() {
           value={st.online === true ? 'connected' : st.online === false ? 'offline' : '—'}
           tone={st.online === true ? 'ok' : st.online === false ? 'warn' : 'neutral'}
         />
-        <StatusRow label="Queue" value={`${st.queuedTotal ?? queue.length} packet(s) · ${backend}`} />
+        <StatusRow label="Queue" value={`${queuedCount} packet(s) · ${backend}`} />
         <StatusRow
           label="Broadcasting (Bluetooth)"
           value={st.beaconOn ? 'ON' : 'off'}
