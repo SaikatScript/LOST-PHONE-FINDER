@@ -104,12 +104,32 @@ UI & ACCOUNT (Phase 5A)
     theme toggle, rename editor, forgot-password + privacy deep links, fleet
     map, mesh screen; zero JS errors). OPPO check pending.
 
+ANTI-THEFT HARDENING (Phase 5B, native module modules/device-guard)
+--------------------------------------------------------------------------------
+36. Device admin (anti-uninstall): Android asks to activate "Lost Phone Finder
+    protection"; while active the app cannot be uninstalled without switching
+    admin off first, and a warning explains what protection is lost. Dashboard ›
+    Protection setup shows Active/Off with one-tap Activate / Turn off.
+37. Reboot auto-start: a BOOT_COMPLETED / QUICKBOOT_POWERON / MY_PACKAGE_REPLACED
+    receiver starts a headless JS task ("lostphone-boot") with no UI. It
+    re-arms the foreground location service, sends one immediate fix (offline ->
+    sealed + Bluetooth broadcast) and runs one mesh agent pass.
+38. Background reliability: the same card shows whether Android is restricting
+    the app, with a one-tap "Allow background" system dialog plus OEM
+    auto-start shortcuts (Xiaomi, OPPO/realme, vivo, Huawei, Samsung, ASUS) and
+    an app-settings fallback. expo-location's foreground service is
+    killServiceOnDestroy=false by default, so swiping the app away keeps it.
+39. The card degrades gracefully on dev binaries built before the module: it
+    explains that a rebuild is needed instead of crashing.
+
 NOT YET BUILT
 --------------------------------------------------------------------------------
-- Phase 5B anti-theft hardening (device admin anti-uninstall, boot receiver,
-  foreground-service persistence), Phase 5C push + Remote Ring/Lock/Wipe,
-  Phase 5D secret SMS + geofencing + online E2E + Play Store release,
-  security audit + hosted legal pages. Full plan: PHASE5_BLUEPRINT.txt.
+- Phase 5B hardening is CODE-COMPLETE but needs the new dev build installed on
+  both phones + hardware verification (activate admin, try uninstall, reboot,
+  MY_PACKAGE_REPLACED broadcast, battery prompt).
+- Phase 5C push + Remote Ring/Lock/Wipe, Phase 5D secret SMS + geofencing +
+  online E2E + Play Store release, security audit + hosted legal pages. Full
+  plan: PHASE5_BLUEPRINT.txt.
 
 ================================================================================
 END OF FEATURE LIST
