@@ -9,6 +9,7 @@ import {
   query,
   orderBy,
   limit,
+  Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -18,13 +19,19 @@ export function deviceLocationsRef(userId, deviceId) {
   return collection(db, 'users', userId, 'devices', deviceId, 'locations');
 }
 
-export async function pushLocation(userId, deviceId, { lat, lng, accuracy, battery, source = 'gps' }) {
+export async function pushLocation(
+  userId,
+  deviceId,
+  { lat, lng, accuracy, battery, source = 'gps', at = null }
+) {
   const payload = {
     lat,
     lng,
     accuracy: accuracy ?? null,
     battery: battery ?? null,
-    timestamp: serverTimestamp(),
+    // `at` carries the fix clock for relayed packets (sealed the moment the
+    // phone lost internet). Without it an hours-old relay looks "just now".
+    timestamp: at ? Timestamp.fromMillis(at) : serverTimestamp(),
     source,
     hopCount: 0,
   };
@@ -37,7 +44,7 @@ export async function pushLocation(userId, deviceId, { lat, lng, accuracy, batte
   const rollup = {
     lastLocation: { latitude: lat, longitude: lng },
     lastAccuracy: accuracy ?? null,
-    lastLocationAt: Date.now(),
+    lastLocationAt: at ?? Date.now(),
     lastLocationSource: source,
     lastUpdate: serverTimestamp(),
   };

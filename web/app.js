@@ -1,6 +1,8 @@
 // Lost Phone Finder — web tracker
 // Same Firebase project, same account, same Firestore docs as the app.
-// Read-only: it never writes device or location data.
+// Reads devices/locations. The only writes are mesh relays relayed for this
+// account: they are decrypted here and folded into the owner's own history,
+// so a lost phone's fix appears even while that phone stays offline.
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
@@ -18,6 +20,14 @@ import {
   query,
   orderBy,
   limit,
+  where,
+  getDoc,
+  getDocs,
+  addDoc,
+  setDoc,
+  deleteDoc,
+  serverTimestamp,
+  Timestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './config.js';
 
@@ -973,6 +983,127 @@ function subscribeDevices() {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* Mesh relay harvest (owner side)                                     */
+/* ------------------------------------------------------------------ */
+
+// A helper phone uploads sealed packets to `relays/` but cannot read them.
+// The lost phone may stay offline for days, so the tracker — signed in as the
+// owner and holding the owner-only key backup — decrypts them into history.
+// Without this step a successful relay would stay invisible until the lost
+// phone reconnects, which defeats the whole mesh.
+
+const keyCache = new Map();
+
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function secretKeyFor(uid, deviceId) {
+  if (keyCache.has(deviceId)) return keyCache.get(deviceId);
+  const snap = await getDoc(doc(db, 'deviceKeys', deviceId));
+  if (!snap.exists()) return null;
+  const data = snap.data();
+  if (data.userId !== uid || !data.privKey) return null;
+  const key = b64ToBytes(data.privKey);
+  keyCache.set(deviceId, key);
+  return key;
+}
+
+async function harvestRelays(uid) {
+  const snap = await getDocs(
+    query(collection(db, 'relays'), where('ownerId', '==', uid), limit(50))
+  );
+  const seen = new Set();
+  for (const relay of snap.docs) {
+    const r = relay.data();
+    const drop = async () => {
+      try {
+        await deleteDoc(doc(db, 'relays', relay.id));
+      } catch {
+        /* retry next pass */
+      }
+    };
+    if (r.packetId && seen.has(r.packetId)) {
+      await drop(); // same fix carried by more than one phone
+      continue;
+    }
+    if (r.packetId) seen.add(r.packetId);
+
+    let fix = null;
+    try {
+      const secretKey = await secretKeyFor(uid, r.deviceId);
+      if (!secretKey) {
+        await drop();
+        continue;
+      }
+      const opened = window.nacl.box.open(
+        b64ToBytes(r.body),
+        b64ToBytes(r.nonce),
+        b64ToBytes(r.eph),
+        secretKey
+      );
+      if (opened) fix = JSON.parse(new TextDecoder().decode(opened));
+    } catch {
+      fix = null;
+    }
+    if (!fix) {
+      await drop(); // undecryptable: never retry forever
+      continue;
+    }
+
+    if (fix.lat == null || fix.lng == null) {
+      await drop(); // beacon ping without a GPS fix
+      continue;
+    }
+
+    try {
+      await addDoc(collection(db, 'users', uid, 'devices', r.deviceId, 'locations'), {
+        lat: fix.lat,
+        lng: fix.lng,
+        accuracy: fix.accuracy ?? null,
+        battery: fix.battery ?? null,
+        timestamp: fix.ts ? Timestamp.fromMillis(fix.ts) : serverTimestamp(),
+        source: 'mesh',
+        hopCount: r.hops ?? 0,
+      });
+      const rollup = {
+        lastLocation: { latitude: fix.lat, longitude: fix.lng },
+        lastAccuracy: fix.accuracy ?? null,
+        lastLocationAt: fix.ts ?? Date.now(),
+        lastLocationSource: 'mesh',
+        lastUpdate: serverTimestamp(),
+      };
+      if (fix.battery != null) rollup.lastBattery = fix.battery;
+      await setDoc(doc(db, 'users', uid, 'devices', r.deviceId), rollup, { merge: true });
+      await drop();
+    } catch {
+      // network/rules failed: keep the relay for the next pass
+    }
+  }
+}
+
+let harvestTimer = null;
+
+function startHarvest(uid) {
+  stopHarvest();
+  const run = () => {
+    harvestRelays(uid).catch(() => {
+      /* offline or rules: next minute */
+    });
+  };
+  run();
+  harvestTimer = setInterval(run, 60 * 1000);
+}
+
+function stopHarvest() {
+  if (harvestTimer) clearInterval(harvestTimer);
+  harvestTimer = null;
+}
+
 function route() {
   if (!state.user) return;
   const match = window.location.hash.match(/^#\/device\/([^/?#]+)/);
@@ -981,6 +1112,8 @@ function route() {
 }
 
 function teardown() {
+  stopHarvest();
+  keyCache.clear();
   state.unsubDevices?.();
   state.unsubDevices = null;
   cleanupDevice();
@@ -997,6 +1130,7 @@ onAuthStateChanged(auth, (user) => {
     state.user = user;
     renderShell();
     subscribeDevices();
+    startHarvest(user.uid);
     route();
   } else {
     teardown();

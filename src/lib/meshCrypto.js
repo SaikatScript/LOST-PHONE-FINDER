@@ -1,4 +1,5 @@
 import nacl from 'tweetnacl';
+import { Platform } from 'react-native';
 import { encodeBase64, decodeBase64, encodeUTF8, decodeUTF8 } from 'tweetnacl-util';
 import * as SecureStore from 'expo-secure-store';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
@@ -60,11 +61,19 @@ export async function ensureDeviceKeys(userId, deviceId) {
 }
 
 async function loadSecretKey(userId, deviceId) {
-  const privB64 =
-    (await SecureStore.getItemAsync(privKeyName(deviceId))) ??
-    (await getDoc(doc(db, 'deviceKeys', deviceId)).then((snap) =>
-      snap.exists() && snap.data().userId === userId ? snap.data().privKey : null
-    ));
+  let privB64 = null;
+  // SecureStore is native-only. The web tracker decrypts relays with the
+  // owner-only backup in deviceKeys/{deviceId}, so it can show a lost phone's
+  // relayed fixes while that phone is still offline.
+  if (Platform.OS !== 'web') {
+    try {
+      privB64 = await SecureStore.getItemAsync(privKeyName(deviceId));
+    } catch {}
+  }
+  if (!privB64) {
+    const snap = await getDoc(doc(db, 'deviceKeys', deviceId));
+    if (snap.exists() && snap.data().userId === userId) privB64 = snap.data().privKey;
+  }
   if (!privB64) throw new Error('No mesh key for this device.');
   return decodeBase64(privB64);
 }

@@ -9,7 +9,7 @@ import {
   where,
   limit,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import { openLocationPacket } from './meshCrypto';
 import { pushLocation } from './locations';
 
@@ -27,6 +27,9 @@ export async function uploadRelay(packet) {
     nonce: packet.nonce,
     body: packet.body,
     hops: (packet.hops ?? 0) + 1,
+    // Who uploaded it: the owner's own phone or a nearby helper. Makes the
+    // "carried by another phone" path verifiable in Firestore.
+    relayedBy: auth.currentUser?.uid ?? null,
     createdAt: serverTimestamp(),
     expiresAt: Date.now() + 24 * 60 * 60 * 1000,
   });
@@ -68,27 +71,41 @@ export async function harvestRelays(userId) {
       continue;
     }
     if (r.packetId) seen.add(r.packetId);
+
+    let fix = null;
     try {
-      const fix = await openLocationPacket(userId, r.deviceId, {
+      fix = await openLocationPacket(userId, r.deviceId, {
         body: r.body,
         nonce: r.nonce,
         eph: r.eph,
       });
-      if (fix.lat == null || fix.lng == null) {
-        // Beacon sealed without a GPS fix — nothing to plot, count the ping only.
-        blank += 1;
-      } else {
+    } catch {
+      // Undecryptable (wrong key/rotation): drop so it does not loop forever.
+      try {
+        await deleteDoc(doc(db, 'relays', d.id));
+      } catch {}
+      continue;
+    }
+
+    if (fix.lat == null || fix.lng == null) {
+      // Beacon sealed without a GPS fix — nothing to plot, count the ping only.
+      blank += 1;
+    } else {
+      try {
         await pushLocation(userId, r.deviceId, {
           lat: fix.lat,
           lng: fix.lng,
           accuracy: fix.accuracy,
           battery: fix.battery,
           source: 'mesh',
+          // Sealed-at time, so a fix carried for hours is not shown as "now".
+          at: fix.ts ?? null,
         });
+        opened += 1;
+      } catch {
+        // Write failed (rules/network): keep the relay, retry on next harvest.
+        continue;
       }
-      opened += 1;
-    } catch {
-      // undecryptable (wrong key/rotation) — drop so it doesn't loop forever
     }
     try {
       await deleteDoc(doc(db, 'relays', d.id));

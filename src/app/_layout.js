@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { setMeshUser } from '../lib/meshAuto';
+import { harvestRelays } from '../lib/meshRelay';
 
 // Phase 5B: the mesh agent follows the signed-in account. It starts the
 // automatic chain (flush → upload → harvest → helper scan → offline beacon)
@@ -16,6 +18,34 @@ function MeshAgent() {
     setMeshUser(user?.uid ?? null);
     return () => setMeshUser(null);
   }, [user?.uid]);
+  return null;
+}
+
+// Web tracker = the owner's always-online device. While the lost phone stays
+// offline, a helper's relay would otherwise sit encrypted and invisible until
+// that phone reconnects (which may never happen). The tracker holds the same
+// owner-only key backup, so it decrypts relays into locations every minute.
+function WebRelayHarvest() {
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !uid) return;
+    let stopped = false;
+    const pull = async () => {
+      if (stopped) return;
+      try {
+        await harvestRelays(uid);
+      } catch {
+        // offline / rules: retry next minute
+      }
+    };
+    pull();
+    const timer = setInterval(pull, 60 * 1000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [uid]);
   return null;
 }
 
@@ -57,6 +87,7 @@ export default function RootLayout() {
       <ThemeProvider>
         <AuthProvider>
           <MeshAgent />
+          <WebRelayHarvest />
           <ThemedStack />
         </AuthProvider>
       </ThemeProvider>
