@@ -392,6 +392,25 @@ EAS BUILD FIX (development APK for Phase 5B hardware tests)
 - Build de137fd1 (development, Android APK) started 2026-11-04.
 
 --------------------------------------------------------------------------------
+PHASE 5B HARDWARE TEST (in progress, 2026-11-04)
+--------------------------------------------------------------------------------
+BUILDS (both succeeded after 2 manifest/lockfile fixes):
+- dev APK (Metro): build 3757dd00-31b5-46ee-9711-7187da88f7a6
+- preview APK (embedded JS, for reboot tests): build 5d2b858d-9ce3-4101-b41c-7eaceb8ebb5c
+- eas.json preview now sets android.buildType=apk (was defaulting to AAB).
+- Fixes: reanimated 4.5.1 + worklets 0.10.1 direct deps; device-guard manifest
+  components moved inside <application> (AAPT rejected root-level <receiver>).
+
+SAMSUNG A50 (preview APK installed over old app, data kept):
+- Logged in as saikat@outlook.com, tracking ON, fresh GPS fix, 32% charging.
+- Protection setup card renders; device admin activated via system dialog.
+- Uninstall from Settings is blocked: Android shows "Device administrator" with
+  only Cancel / "Deactivate and uninstall" - anti-uninstall gate works.
+- Background reliability already shows "Unrestricted".
+- Reboot test running: expecting BootReceiver -> lostphone-boot headless task to
+  send a fix and resume tracking/beacon without opening the app.
+
+--------------------------------------------------------------------------------
 PENDING
 --------------------------------------------------------------------------------
 - Phase 5B verification on hardware (Samsung A50 + OPPO): activate device admin,
