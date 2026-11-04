@@ -32,8 +32,11 @@ let autoFixInFlight = false;
 // Real connectivity, independent of Firestore's local cache. Used for the
 // status chip AND to seal + broadcast the moment internet disappears - without
 // waiting for a GPS update that a stationary phone may not get for hours.
-async function hasInternet() {
-  if (isFirestoreOffline()) return false;
+// A single failed probe is not enough: Wi-Fi reassociation produces 1-2 s
+// blackouts that used to seal a junk fix and flash the beacon. One retry a few
+// seconds later turns those into "still online", while a real airplane-mode
+// cut is confirmed within ~10 s.
+async function probeInternet() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4000);
   try {
@@ -47,6 +50,13 @@ async function hasInternet() {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function hasInternet() {
+  if (isFirestoreOffline()) return false;
+  if (await probeInternet()) return true;
+  await new Promise((r) => setTimeout(r, 5000));
+  return probeInternet();
 }
 
 let uid = null;
