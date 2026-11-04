@@ -380,6 +380,18 @@ FIXES FROM THE TEST:
 - Manual broadcast now queues its packet too (survives an app restart).
 
 --------------------------------------------------------------------------------
+EAS BUILD FIX (development APK for Phase 5B hardware tests)
+--------------------------------------------------------------------------------
+- npm ci on EAS (Node 22 / npm 10.9.8) failed with "Missing:
+  react-native-worklets@0.10.4 from lock file". Cause: expo-router auto-installed
+  reanimated 4.7.1 + worklets 0.13.0, but expo-modules-core peers only accept
+  worklets ^0.10.0, so npm tried to nest a second copy the lock never recorded.
+- Fix: added the SDK 57 pair as direct deps (expo install): reanimated 4.5.1 +
+  worklets 0.10.1. Whole tree now dedupes to one worklets version; npm ci with
+  npm 10.9.8 passes locally.
+- Build de137fd1 (development, Android APK) started 2026-11-04.
+
+--------------------------------------------------------------------------------
 PENDING
 --------------------------------------------------------------------------------
 - Phase 5B verification on hardware (Samsung A50 + OPPO): activate device admin,
