@@ -422,6 +422,22 @@ AIRPLANE-MODE TEST (exposed two gaps):
   fixes whose beacon is off are retried too.
 - New preview APK build 081d97de-e43d-4855-85e4-1da42029504f.
 
+AIRPLANE-MODE + BLE RELAY TEST PASSED (real hardware, no taps):
+- Samsung: Wi-Fi off + airplane on + Bluetooth on while the app was open.
+  Logcat: 00:09:58 "sealed + queued" then "beacon ON - offline fix queued +
+  broadcasting" - no "Send location now". Fix accuracy 3.5 m, battery 90.
+- OPPO (nearby, app open) uploaded that sealed packet to relays/ at 18:41,
+  18:47 and 18:52Z while the Samsung stayed offline. All decrypt with the
+  owner key backup; harvest produced a location with src=mesh.
+- Web tracker gap fixed: the tracker now decrypts relays itself (owner-only
+  deviceKeys backup) every 60 s, so a fix appears while the lost phone stays
+  offline. Deployed at saikat-e8982.web.app (tracker also preserves fix time).
+- Relays now carry relayedBy and are kept if the history write fails.
+- Standalone preview 081d97de installed over the dev build on Samsung (data
+  kept) and launched with Metro stopped: runs with no dev server.
+- New preview build 37cfce0a-c087-460f-921a-13c2cc1c7280 (fix time +
+  relayedBy + two-probe offline check) is in the EAS queue.
+
 --------------------------------------------------------------------------------
 PENDING
 --------------------------------------------------------------------------------
