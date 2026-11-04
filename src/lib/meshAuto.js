@@ -5,7 +5,7 @@ import { ensureDeviceKeys, sealLocationPacket } from './meshCrypto';
 import { enqueuePacket, listPackets, removePacket } from './meshQueue';
 import { uploadRelay, harvestRelays } from './meshRelay';
 import { helperScanOnce, startBeacon, stopBeacon, isBleAvailable } from './meshBle';
-import { confirmedUpload } from './uploadAck';
+import { confirmedUpload, isFirestoreOffline } from './uploadAck';
 
 // Phase 5B automation: every mesh step that used to be a button now runs by
 // itself, on every phone (same app = same behavior):
@@ -23,6 +23,31 @@ const TICK_MS = 60 * 1000; // heartbeat while the app is open
 const HARVEST_EVERY_MS = 3 * 60 * 1000; // poll my relays (cheap: 1+ reads)
 const SCAN_EVERY_MS = 5 * 60 * 1000; // helper BLE scan cadence
 export const SCAN_WINDOW_MS = 25 * 1000; // one scan listens this long
+const AUTO_FIX_EVERY_MS = 5 * 60 * 1000; // offline auto-seal retry cadence
+
+let lastAutoFixAt = 0;
+let lastResumeAt = 0;
+let autoFixInFlight = false;
+
+// Real connectivity, independent of Firestore's local cache. Used for the
+// status chip AND to seal + broadcast the moment internet disappears - without
+// waiting for a GPS update that a stationary phone may not get for hours.
+async function hasInternet() {
+  if (isFirestoreOffline()) return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const res = await fetch('https://clients3.google.com/generate_204', {
+      method: 'HEAD',
+      signal: controller.signal,
+    });
+    return res.ok || res.status === 204;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 let uid = null;
 let tickTimer = null;
@@ -196,6 +221,7 @@ async function tick() {
   if (!uid || tickBusy) return;
   tickBusy = true;
   try {
+    const reachable = await hasInternet();
     let queued = [];
     try {
       queued = await listPackets();
@@ -211,7 +237,6 @@ async function tick() {
 
     let sent = 0;
     let acked = null;
-    let anyFail = false;
 
     // 1) Hand every queued packet (helper backlog + my own offline fixes) to
     // Firestore at most once per session. The write resolves locally even when
@@ -222,7 +247,7 @@ async function tick() {
         await uploadRelay(p);
         attemptedIds.add(p.packetId);
       } catch {
-        anyFail = true;
+        // keep it queued; the server-ack check decides whether we are offline
       }
     }
 
@@ -276,8 +301,9 @@ async function tick() {
       await stopBeaconInternal('internet back — broadcast stopped');
     }
 
+    const online = reachable && acked !== false;
     setStatus({
-      online: acked === true ? true : acked === false || anyFail ? false : status.online,
+      online,
       queuedTotal: after.length,
       queuedOwn: stillMine,
       lastTickAt: Date.now(),
@@ -285,6 +311,36 @@ async function tick() {
       lastHarvestText: harvestText,
       relayedUp: status.relayedUp + sent,
     });
+
+    // Internet is gone: seal + broadcast NOW. A phone left on a table (or in a
+    // thief's drawer) may produce no GPS update for hours, and waiting for one
+    // meant airplane mode showed "internet ok / broadcasting off" forever.
+    if (
+      !online &&
+      !autoFixInFlight &&
+      !beaconOn &&
+      stillMine === 0 &&
+      Date.now() - lastAutoFixAt >= AUTO_FIX_EVERY_MS
+    ) {
+      lastAutoFixAt = Date.now();
+      autoFixInFlight = true;
+      Promise.resolve()
+        .then(() => {
+          const { pushOfflineFixFromTracked } = require('./tracking');
+          return pushOfflineFixFromTracked();
+        })
+        .catch(() => {})
+        .finally(() => {
+          autoFixInFlight = false;
+        });
+    }
+
+    // A fix is already queued but the beacon is off (e.g. Bluetooth was turned
+    // off): retry the broadcast so it resumes without a manual tap.
+    if (!online && !beaconOn && stillMine > 0 && Date.now() - lastResumeAt >= AUTO_FIX_EVERY_MS) {
+      lastResumeAt = Date.now();
+      resumeBeaconFromQueue().catch(() => {});
+    }
 
     // 4) Helper scan while the app is open (cadence enforced inside).
     if (appActive) runScanCycle().catch(() => {});

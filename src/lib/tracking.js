@@ -198,6 +198,26 @@ export async function pushCurrentLocationNow(userId, deviceId) {
   return { lat: best.pos.coords.latitude, lng: best.pos.coords.longitude, battery };
 }
 
+// Phase 5B: called by the mesh agent when connectivity is lost. Unlike
+// pushCurrentLocationNow this needs no Firestore write - it seals the best
+// available position (GPS -> network -> last known) immediately and starts the
+// beacon, so a stationary phone still broadcasts after airplane mode.
+export async function pushOfflineFixFromTracked() {
+  const tracked = await readTrackedDevice();
+  if (!tracked?.userId || !tracked?.deviceId) return false;
+  const best = await getBestAvailablePosition();
+  if (!best) return false;
+  const battery = await readBatteryPercent();
+  return beaconOfflineFix({
+    userId: tracked.userId,
+    deviceId: tracked.deviceId,
+    lat: best.pos.coords.latitude,
+    lng: best.pos.coords.longitude,
+    accuracy: best.pos.coords.accuracy ?? null,
+    battery,
+  });
+}
+
 // One source of truth for the background location task options (also used by
 // the boot receiver when it re-arms tracking after a reboot).
 function backgroundTaskOptions() {
