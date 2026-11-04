@@ -438,6 +438,22 @@ AIRPLANE-MODE + BLE RELAY TEST PASSED (real hardware, no taps):
 - New preview build 37cfce0a-c087-460f-921a-13c2cc1c7280 (fix time +
   relayedBy + two-probe offline check) is in the EAS queue.
 
+SECOND AIRPLANE TEST - INCONCLUSIVE, ROOT CAUSE FOUND:
+- `cmd connectivity airplane-mode enable` turns Bluetooth OFF on this Samsung,
+  and the shell cannot turn it back on (`svc bluetooth enable` is a silent
+  no-op; `cmd bluetooth_manager` is unimplemented).
+- The relay that appeared at 19:19:55Z arrived ~5 s after the scripted Wi-Fi
+  restore, so it was the Samsung's own upload, not the OPPO. Build 081d97de
+  has no relayedBy field, so that run cannot prove the relay role.
+- FIX (5770ea1): MeshAdvertiser now exposes ensureBluetoothEnabled() - on
+  Android <= 12 it calls BluetoothAdapter.enable() and waits up to 8 s for the
+  radio, so a phone in airplane mode still broadcasts with no taps. JS calls it
+  before startBeacon AND before helper scans (every phone does both roles).
+  Android 13+ blocks programmatic enable; the UI shows that reason instead.
+- Android 12+ needs BLUETOOTH_CONNECT (already granted); Android 11 needs
+  BLUETOOTH_ADMIN (declared by ble-plx with maxSdkVersion=30).
+- New preview build c8b661d5-a56b-48dd-a6f5-991222e4394e (queue).
+
 --------------------------------------------------------------------------------
 PENDING
 --------------------------------------------------------------------------------
