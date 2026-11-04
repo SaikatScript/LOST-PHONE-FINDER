@@ -31,7 +31,9 @@
         "RECEIVE_SMS",
         "BLUETOOTH_SCAN",
         "BLUETOOTH_CONNECT",
-        "BLUETOOTH_ADVERTISE"
+        "BLUETOOTH_ADVERTISE",
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN"
       ]
     },
     "web": {

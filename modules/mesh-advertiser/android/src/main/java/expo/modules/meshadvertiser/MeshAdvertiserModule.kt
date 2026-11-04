@@ -56,6 +56,14 @@ class MeshAdvertiserModule : Module() {
       return@Function startBeaconInternal(serviceUuidStr, charUuidStr, packetBase64)
     }
 
+    // Airplane mode switches Bluetooth off on many phones. The stolen phone has
+    // nobody to tap a switch, so JS asks the stack to turn the radio back on
+    // before advertising/scanning. Async so the 8 s wait never blocks the JS
+    // thread (the UI keeps rendering while the radio comes up).
+    AsyncFunction("ensureBluetoothEnabled") {
+      ensureBluetoothEnabled()
+    }
+
     Function("stopBeacon") {
       stopBeaconInternal()
       return@Function true
@@ -73,6 +81,51 @@ class MeshAdvertiserModule : Module() {
       // ignore event-delivery failures
     }
     return false
+  }
+
+  /**
+   * Turns Bluetooth back on when airplane mode (or the user) switched it off.
+   * Returns "" on success, otherwise a human-readable reason. Android 13+ only
+   * allows the user to flip this switch, so there we report the real cause
+   * instead of pretending the beacon failed for an unknown reason.
+   */
+  @SuppressLint("MissingPermission")
+  @Suppress("DEPRECATION")
+  private fun ensureBluetoothEnabled(): String {
+    val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+      ?: return "Bluetooth unavailable on this device"
+    val adapter: BluetoothAdapter = manager.adapter ?: return "Bluetooth adapter missing"
+    if (adapter.isEnabled) return ""
+    if (Build.VERSION.SDK_INT >= 33) {
+      return "Bluetooth is off — Android 13+ needs one tap to turn it on"
+    }
+    try {
+      val requested = adapter.enable()
+      if (!requested) return "Bluetooth is off and the system refused to enable it"
+    } catch (e: SecurityException) {
+      return "Bluetooth is off — enable permission missing: ${e.message}"
+    } catch (e: Exception) {
+      return "Bluetooth is off — enable failed: ${e.message}"
+    }
+    val deadline = System.currentTimeMillis() + 8000
+    while (System.currentTimeMillis() < deadline) {
+      if (adapter.isEnabled) {
+        // The adapter reports enabled slightly before the LE advertiser is
+        // published — give the stack a beat so startAdvertising does not race it.
+        try {
+          Thread.sleep(500)
+        } catch (_: InterruptedException) {
+          // keep going; the radio is already on
+        }
+        return ""
+      }
+      try {
+        Thread.sleep(200)
+      } catch (_: InterruptedException) {
+        break
+      }
+    }
+    return "Bluetooth did not turn on within 8 s"
   }
 
   @SuppressLint("MissingPermission")

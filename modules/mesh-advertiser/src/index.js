@@ -13,6 +13,11 @@ export function stopBeacon() {
   return MeshAdvertiser.stopBeacon();
 }
 
+// "" when Bluetooth is (now) on, otherwise the reason it could not be enabled.
+export async function ensureBluetoothEnabled() {
+  return MeshAdvertiser.ensureBluetoothEnabled();
+}
+
 export function isBeaconAdvertising() {
   try {
     return MeshAdvertiser.isAdvertising();

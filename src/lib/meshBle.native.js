@@ -54,6 +54,35 @@ async function poweredOn(ble) {
   if (state !== 'PoweredOn') throw new Error(`Bluetooth is ${state}. Turn it on.`);
 }
 
+// Airplane mode turns Bluetooth off on many phones, which kills both roles of
+// the mesh (advertise AND scan). Ask the native module to switch the radio back
+// on, then wait for ble-plx to observe the new state. On Android 13+ the OS
+// refuses programmatic enable, so the module's message is passed through.
+async function ensureRadioOn(ble) {
+  try {
+    if ((await ble.state()) === 'PoweredOn') return;
+  } catch {
+    // fall through — the retry below reports the real error
+  }
+  let note = '';
+  try {
+    const Adv = require('../../modules/mesh-advertiser/src/index');
+    if (typeof Adv.ensureBluetoothEnabled === 'function') {
+      note = (await Adv.ensureBluetoothEnabled()) || '';
+    }
+  } catch {
+    // module missing on old binaries — poweredOn() below explains the state
+  }
+  for (let i = 0; i < 10; i++) {
+    try {
+      if ((await ble.state()) === 'PoweredOn') return;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  if (note) throw new Error(note);
+  await poweredOn(ble);
+}
+
 // Scan for stolen phones advertising MESH_SERVICE_UUID. For each found device:
 // connect → read sealed packet characteristic → hand to onPacket → disconnect.
 // Resolves with { packets, stats } so the UI can report WHY it found nothing
@@ -62,7 +91,7 @@ async function poweredOn(ble) {
 export async function helperScanOnce(onPacket, timeoutMs = 20000) {
   const ble = getBle(); // throws on old binary — caller surfaces it
   await ensureBlePermissions();
-  await poweredOn(ble);
+  await ensureRadioOn(ble);
   const packets = [];
   const stats = { seen: 0, connected: 0, read: 0, errors: [] };
   const trace = []; // step-by-step breadcrumbs for the alert on failure
@@ -255,7 +284,7 @@ export async function helperScanOnce(onPacket, timeoutMs = 20000) {
 export async function scanNearbyDevices(ms = 8000) {
   const ble = getBle();
   await ensureBlePermissions();
-  await poweredOn(ble);
+  await ensureRadioOn(ble);
   const seen = new Map();
   return new Promise((resolve, reject) => {
     let done = false;
@@ -319,6 +348,12 @@ export async function startBeacon(packet) {
     throw new Error('Beacon module missing — install the latest dev build.');
   }
   const payload = encodeBase64(decodeUTF8(JSON.stringify(packet)));
+  // Airplane mode can leave Bluetooth off; the radio must be on before the LE
+  // advertiser exists. Returns "" on success or the reason it could not.
+  if (typeof Adv.ensureBluetoothEnabled === 'function') {
+    const note = await Adv.ensureBluetoothEnabled();
+    if (note) throw new Error(note);
+  }
   const ok = Adv.startBeacon(MESH_SERVICE_UUID, MESH_PACKET_CHAR_UUID, payload);
   if (!ok) throw new Error(Adv.getBeaconLastError() || 'Beacon failed to start.');
   return true;
