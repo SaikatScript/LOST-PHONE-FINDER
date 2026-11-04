@@ -409,6 +409,18 @@ SAMSUNG A50 (preview APK installed over old app, data kept):
 - Background reliability already shows "Unrestricted".
 - Reboot test running: expecting BootReceiver -> lostphone-boot headless task to
   send a fix and resume tracking/beacon without opening the app.
+- REBOOT TEST PASSED: logcat shows BootReceiver 17:29 + BootTaskService headless;
+  a fresh GPS fix landed at 11:59:27Z (17:29 IST) with the app never opened.
+
+AIRPLANE-MODE TEST (exposed two gaps):
+- Stationary phone -> Android delivers no new location (25 m distance filter),
+  so no offline fix was ever sealed; the mesh chip kept its last "internet ok".
+- FIX (4fda8b5): mesh agent now probes real connectivity every 60 s
+  (clients3.google.com/generate_204, 4 s timeout), updates the chip from that,
+  and on loss seals the best available position + starts the beacon by itself
+  (GPS -> network -> last known), throttled to one attempt / 5 min. Queued
+  fixes whose beacon is off are retried too.
+- New preview APK build 081d97de-e43d-4855-85e4-1da42029504f.
 
 --------------------------------------------------------------------------------
 PENDING
