@@ -7,36 +7,42 @@
   <uses-permission android:name="android.permission.WAKE_LOCK" />
   <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-  <!-- Device admin: uninstalling now requires deactivating admin first. -->
-  <receiver
-    android:name=".DeviceGuardAdminReceiver"
-    android:label="Lost Phone Finder protection"
-    android:description="@string/device_admin_description"
-    android:permission="android.permission.BIND_DEVICE_ADMIN"
-    android:exported="true">
-    <meta-data
-      android:name="android.app.device_admin"
-      android:resource="@xml/device_admin" />
-    <intent-filter>
-      <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
-    </intent-filter>
-  </receiver>
+  <!-- Components must live inside <application>, otherwise manifest merging
+       leaves them at the <manifest> root and AAPT fails the resource link. -->
+  <application>
 
-  <!-- Boot / update: wake the JS headlessly so tracking + beacon resume. -->
-  <receiver
-    android:name=".BootReceiver"
-    android:enabled="true"
-    android:exported="true">
-    <intent-filter>
-      <action android:name="android.intent.action.BOOT_COMPLETED" />
-      <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-      <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-    </intent-filter>
-  </receiver>
+    <!-- Device admin: uninstalling now requires deactivating admin first. -->
+    <receiver
+      android:name=".DeviceGuardAdminReceiver"
+      android:label="Lost Phone Finder protection"
+      android:description="@string/device_admin_description"
+      android:permission="android.permission.BIND_DEVICE_ADMIN"
+      android:exported="true">
+      <meta-data
+        android:name="android.app.device_admin"
+        android:resource="@xml/device_admin" />
+      <intent-filter>
+        <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+      </intent-filter>
+    </receiver>
 
-  <service
-    android:name=".BootTaskService"
-    android:enabled="true"
-    android:exported="false" />
+    <!-- Boot / update: wake the JS headlessly so tracking + beacon resume. -->
+    <receiver
+      android:name=".BootReceiver"
+      android:enabled="true"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+
+    <service
+      android:name=".BootTaskService"
+      android:enabled="true"
+      android:exported="false" />
+
+  </application>
 
 </manifest>
