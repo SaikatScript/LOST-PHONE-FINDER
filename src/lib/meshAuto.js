@@ -140,16 +140,13 @@ async function stopBeaconInternal(reason) {
 export async function beaconOfflineFix({ userId, deviceId, lat, lng, accuracy = null, battery = null }) {
   if (!userId || !deviceId) return false;
   setStatus({ online: false });
+  // Seal + queue FIRST: the fix must survive even when the radio cannot
+  // broadcast (permission refused, BLE stack busy, old binary). It then uploads
+  // automatically the moment internet returns — losing it is never acceptable.
+  let packet;
   try {
-    if (!(await bleGrantsOk())) {
-      setStatus({
-        note: 'Fix saved for upload. Bluetooth permission is missing, so the offline broadcast could not start.',
-        queuedOwn: status.queuedOwn,
-      });
-      return false;
-    }
     const kp = await ensureDeviceKeys(userId, deviceId);
-    const packet = await sealLocationPacket({
+    packet = await sealLocationPacket({
       ownerId: userId,
       deviceId,
       lat,
@@ -161,10 +158,27 @@ export async function beaconOfflineFix({ userId, deviceId, lat, lng, accuracy = 
     await enqueuePacket(packet);
     console.log('[mesh-auto] sealed + queued', packet.packetId);
     setStatus({ queuedOwn: status.queuedOwn + 1, note: '' });
+  } catch (e) {
+    console.warn('[mesh-auto] offline seal failed:', e?.message ?? String(e));
+    setStatus({ note: `Could not save the offline fix: ${e.message}` });
+    return false;
+  }
+  try {
+    if (!(await bleGrantsOk())) {
+      setStatus({
+        note: 'Fix saved — it uploads automatically. Bluetooth permission is missing, so it is not broadcasting to nearby phones.',
+        queuedOwn: status.queuedOwn,
+      });
+      return true;
+    }
     await startBeaconInternal(packet);
     return true;
   } catch (e) {
-    setStatus({ note: `Offline broadcast failed: ${e.message}` });
+    console.warn('[mesh-auto] beacon start failed:', e?.message ?? String(e));
+    setStatus({
+      note: `Fix saved for automatic upload. Bluetooth broadcast failed: ${e.message}`,
+      queuedOwn: status.queuedOwn,
+    });
     return false;
   }
 }
@@ -379,7 +393,16 @@ export function setMeshUser(nextUid) {
 }
 
 // Used by the mesh screen's manual beacon toggle to stay in sync with the agent.
+// Also queue the packet: a manual test broadcast must survive a restart exactly
+// like an automatic one (previously it only lived in the BLE advertiser).
 export async function manualBeacon(packet) {
+  try {
+    await enqueuePacket(packet);
+    console.log('[mesh-auto] sealed + queued', packet.packetId);
+    setStatus({ queuedOwn: status.queuedOwn + 1 });
+  } catch (e) {
+    console.warn('[mesh-auto] manual beacon queue failed:', e?.message ?? String(e));
+  }
   await startBeaconInternal(packet);
 }
 

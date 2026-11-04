@@ -10,6 +10,15 @@ import { db } from './firebase';
 
 const UPLOAD_ACK_MS = 10000;
 
+// In-memory QA state. Kept outside React so leaving the mesh screen cannot make
+// the UI claim "online" while Firestore is still deliberately offline (that
+// desync used to hide the switch and stall harvest until a full restart).
+let simulatedOffline = false;
+
+export function isFirestoreOffline() {
+  return simulatedOffline;
+}
+
 export async function confirmedUpload(timeoutMs = UPLOAD_ACK_MS) {
   try {
     const res = await Promise.race([
@@ -30,6 +39,7 @@ export async function confirmedUpload(timeoutMs = UPLOAD_ACK_MS) {
 export async function setFirestoreOffline(off) {
   try {
     await (off ? disableNetwork(db) : enableNetwork(db));
+    simulatedOffline = off;
     return true;
   } catch {
     return false;

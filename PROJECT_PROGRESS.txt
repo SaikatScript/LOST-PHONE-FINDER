@@ -359,6 +359,27 @@ modules/* like mesh-advertiser).
   code.
 
 --------------------------------------------------------------------------------
+MESH FIELD TEST (Samsung A50 offline -> OPPO relay -> server -> tracker)
+--------------------------------------------------------------------------------
+VERIFIED 2026-11-04:
+- Samsung sealed a fix and broadcast it over BLE (manual broadcast used after a
+  stale SQLite queue was repaired in place).
+- OPPO helper scan read the beacon 5x and uploaded 5 relay docs; the server
+  held 7 sealed copies of packet WdHHxQyityduvc54cS8c-1793732165904-6307ca75.
+- Owner harvest on the Samsung: "checked 7, decrypted 1" -> relays deleted.
+- Firestore device doc: lastLocationSource=mesh, fresh lastUpdate; history row
+  source=mesh, 20.8305763/85.2537102, 22 m accuracy.
+- The web tracker reads that same doc/history, so the mesh fix shows there too.
+FIXES FROM THE TEST:
+- meshQueue.native.js self-heals a corrupt mesh.db (close/delete/recreate) and
+  retries once instead of failing every read with NativeDatabase NPE.
+- beaconOfflineFix now seals + enqueues BEFORE checking BLE grants, so a refused
+  Nearby-devices permission can never lose a fix; failures are logged.
+- Simulated-outage state moved to uploadAck (module-level) so leaving the mesh
+  screen cannot desync the switch/UI from the real Firestore network state.
+- Manual broadcast now queues its packet too (survives an app restart).
+
+--------------------------------------------------------------------------------
 PENDING
 --------------------------------------------------------------------------------
 - Phase 5B verification on hardware (Samsung A50 + OPPO): activate device admin,

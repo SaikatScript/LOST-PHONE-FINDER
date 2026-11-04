@@ -20,7 +20,7 @@ import {
   manualBeacon,
   manualBeaconStop,
 } from '../lib/meshAuto';
-import { setFirestoreOffline } from '../lib/uploadAck';
+import { setFirestoreOffline, isFirestoreOffline } from '../lib/uploadAck';
 import { Screen, Card, Chip, Button, SectionTitle, StatusDot, EmptyState } from '../components/ui';
 import { space } from '../theme';
 
@@ -53,7 +53,7 @@ export default function Mesh() {
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [simOffline, setSimOffline] = useState(false);
+  const [simOffline, setSimOffline] = useState(() => isFirestoreOffline());
   const [agent, setAgent] = useState(null);
 
   useEffect(() => subscribeMeshStatus(setAgent), []);
